@@ -46,3 +46,9 @@ IPTABLES_STATUS_VERBOSE="no"
 #   Value: yes|no,  default: yes
 # Print a counter/number for every rule in the status output.
 IPTABLES_STATUS_LINENUMBERS="yes"
+
+# Reload sysctl settings on start and restart
+#   Default: -none-
+# Space separated list of sysctl items which are to be reloaded on start.
+# List items will be matched by fgrep.
+#IPTABLES_SYSCTL_LOAD_LIST=".nf_conntrack .bridge-nf"

@@ -1,0 +1,51 @@
+diff -up iptables-1.4.21/iptables/ip6tables-save.c.rhbz_1054871 iptables-1.4.21/iptables/ip6tables-save.c
+--- iptables-1.4.21/iptables/ip6tables-save.c.rhbz_1054871	2013-11-22 12:18:13.000000000 +0100
++++ iptables-1.4.21/iptables/ip6tables-save.c	2014-03-11 16:19:11.855799695 +0100
+@@ -141,7 +141,7 @@ int ip6tables_save_main(int argc, char *
+ 	init_extensions6();
+ #endif
+ 
+-	while ((c = getopt_long(argc, argv, "bcdt:", options, NULL)) != -1) {
++	while ((c = getopt_long(argc, argv, "M:cdt:", options, NULL)) != -1) {
+ 		switch (c) {
+ 		case 'c':
+ 			show_counters = 1;
+diff -up iptables-1.4.21/iptables/iptables-save.8.in.rhbz_1054871 iptables-1.4.21/iptables/iptables-save.8.in
+--- iptables-1.4.21/iptables/iptables-save.8.in.rhbz_1054871	2013-11-22 12:18:13.000000000 +0100
++++ iptables-1.4.21/iptables/iptables-save.8.in	2014-03-11 16:15:54.491729364 +0100
+@@ -23,11 +23,11 @@ iptables-save \(em dump iptables rules t
+ .P
+ ip6tables-save \(em dump iptables rules to stdout
+ .SH SYNOPSIS
+-\fBiptables\-save\fP [\fB\-M\fP \fImodprobe\fP] [\fB\-c\fP]
++\fBiptables\-save\fP [\fB\-M\fP,\fB\-\-modprobe\fP \fImodprobe\fP] [\fB\-c\fP]
+ [\fB\-t\fP \fItable\fP]
+ .P
+-\fBip6tables\-save\fP [\fB\-M\fP \fImodprobe\fP] [\fB\-c\fP]
+-[\fB\-t\fP \fItable\fP
++\fBip6tables\-save\fP [\fB\-M\fP,\fB\-\-modprobe\fP \fImodprobe\fP] [\fB\-c\fP]
++[\fB\-t\fP \fItable\fP]
+ .SH DESCRIPTION
+ .PP
+ .B iptables-save
+@@ -36,7 +36,7 @@ and
+ are used to dump the contents of IP or IPv6 Table in easily parseable format
+ to STDOUT. Use I/O-redirection provided by your shell to write to a file.
+ .TP
+-\fB\-M\fP \fImodprobe_program\fP
++\fB\-M\fP,\fB\-\-modprobe\fP \fImodprobe_program\fP
+ Specify the path to the modprobe program. By default, iptables-save will
+ inspect /proc/sys/kernel/modprobe to determine the executable's path.
+ .TP
+diff -up iptables-1.4.21/iptables/iptables-save.c.rhbz_1054871 iptables-1.4.21/iptables/iptables-save.c
+--- iptables-1.4.21/iptables/iptables-save.c.rhbz_1054871	2013-11-22 12:18:13.000000000 +0100
++++ iptables-1.4.21/iptables/iptables-save.c	2014-03-11 16:19:38.354409495 +0100
+@@ -140,7 +140,7 @@ iptables_save_main(int argc, char *argv[
+ 	init_extensions4();
+ #endif
+ 
+-	while ((c = getopt_long(argc, argv, "bcdt:", options, NULL)) != -1) {
++	while ((c = getopt_long(argc, argv, "M:cdt:", options, NULL)) != -1) {
+ 		switch (c) {
+ 		case 'c':
+ 			show_counters = 1;

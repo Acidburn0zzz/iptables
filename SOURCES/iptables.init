@@ -23,11 +23,15 @@
 
 IPTABLES=iptables
 IPTABLES_DATA=/etc/sysconfig/$IPTABLES
+IPTABLES_FALLBACK_DATA=${IPTABLES_DATA}.fallback
 IPTABLES_CONFIG=/etc/sysconfig/${IPTABLES}-config
 IPV=${IPTABLES%tables} # ip for ipv4 | ip6 for ipv6
 [ "$IPV" = "ip" ] && _IPV="ipv4" || _IPV="ipv6"
 PROC_IPTABLES_NAMES=/proc/net/${IPV}_tables_names
 VAR_SUBSYS_IPTABLES=/var/lock/subsys/$IPTABLES
+
+# only usable for root
+[ $EUID = 0 ] || exit 4
 
 if [ ! -x /sbin/$IPTABLES ]; then
     echo -n $"${IPTABLES}: /sbin/$IPTABLES does not exist."; warning; echo
@@ -48,6 +52,7 @@ IPTABLES_SAVE_COUNTER="no"
 IPTABLES_STATUS_NUMERIC="yes"
 IPTABLES_STATUS_VERBOSE="no"
 IPTABLES_STATUS_LINENUMBERS="yes"
+IPTABLES_SYSCTL_LOAD_LIST=""
 
 # Load firewall configuration.
 [ -f "$IPTABLES_CONFIG" ] && . "$IPTABLES_CONFIG"
@@ -173,6 +178,21 @@ set_policy() {
     return $ret
 }
 
+load_sysctl() {
+    # load matched sysctl values
+    if [ -n "$IPTABLES_SYSCTL_LOAD_LIST" ]; then
+        echo -n $"Loading sysctl settings: "
+        ret=0
+        for item in $IPTABLES_SYSCTL_LOAD_LIST; do
+            fgrep $item /etc/sysctl.conf | sysctl -p - >/dev/null
+            let ret+=$?;
+        done
+        [ $ret -eq 0 ] && success || failure
+        echo
+    fi
+    return $ret
+}
+
 start() {
     # Do not start if there is no config file.
     [ ! -f "$IPTABLES_DATA" ] && return 6
@@ -193,7 +213,18 @@ start() {
     if [ $? -eq 0 ]; then
 	success; echo
     else
-	failure; echo; return 1
+	failure; echo;
+	if [ -f "$IPTABLES_FALLBACK_DATA" ]; then
+	    echo -n $"${IPTABLES}: Applying firewall fallback rules: "
+	    $IPTABLES-restore $OPT $IPTABLES_FALLBACK_DATA
+	    if [ $? -eq 0 ]; then
+		success; echo
+	    else
+		failure; echo; return 1
+	    fi
+	else
+	    return 1
+	fi
     fi
     
     # Load additional modules (helpers)
@@ -209,6 +240,9 @@ start() {
 	echo
     fi
     
+    # Load sysctl settings
+    load_sysctl
+
     touch $VAR_SUBSYS_IPTABLES
     return $ret
 }
@@ -217,8 +251,12 @@ stop() {
     # Do not stop if iptables module is not loaded.
     [ ! -e "$PROC_IPTABLES_NAMES" ] && return 0
 
-    flush_n_delete
+    # Set default chain policy to ACCEPT, in order to not break shutdown
+    # on systems where the default policy is DROP and root device is
+    # network-based (i.e.: iSCSI, NFS)
     set_policy ACCEPT
+    # And then, flush the rules and delete chains
+    flush_n_delete
     
     if [ "x$IPTABLES_MODULES_UNLOAD" = "xyes" ]; then
 	echo -n $"${IPTABLES}: Unloading modules: "
@@ -253,7 +291,7 @@ save() {
     [ "x$IPTABLES_SAVE_COUNTER" = "xyes" ] && OPT="-c"
 
     ret=0
-    TMP_FILE=$(/bin/mktemp -q /tmp/$IPTABLES.XXXXXX) \
+    TMP_FILE=$(/bin/mktemp -q $IPTABLES_DATA.XXXXXX) \
 	&& chmod 600 "$TMP_FILE" \
 	&& $IPTABLES-save $OPT > $TMP_FILE 2>/dev/null \
 	&& size=$(stat -c '%s' $TMP_FILE) && [ $size -gt 0 ] \
@@ -262,17 +300,19 @@ save() {
 	if [ -e $IPTABLES_DATA ]; then
 	    cp -f $IPTABLES_DATA $IPTABLES_DATA.save \
 		&& chmod 600 $IPTABLES_DATA.save \
+		&& restorecon $IPTABLES_DATA.save \
 		|| ret=1
 	fi
 	if [ $ret -eq 0 ]; then
-	    cp -f $TMP_FILE $IPTABLES_DATA \
+	    mv -f $TMP_FILE $IPTABLES_DATA \
 		&& chmod 600 $IPTABLES_DATA \
+		&& restorecon $IPTABLES_DATA \
 	        || ret=1
 	fi
     fi
+    rm -f $TMP_FILE
     [ $ret -eq 0 ] && success || failure
     echo
-    rm -f $TMP_FILE
     return $ret
 }
 
@@ -311,6 +351,48 @@ status() {
     return 0
 }
 
+reload() {
+    # Do not reload if there is no config file.
+    [ ! -f "$IPTABLES_DATA" ] && return 6
+
+    # check if ipv6 module load is deactivated
+    if [ "${_IPV}" = "ipv6" ] \
+	&& grep -qIsE "^install[[:space:]]+${_IPV}[[:space:]]+/bin/(true|false)" /etc/modprobe.conf /etc/modprobe.d/* ; then
+	echo $"${IPTABLES}: ${_IPV} is disabled."
+	return 150
+    fi
+
+    echo -n $"${IPTABLES}: Trying to reload firewall rules: "
+
+    OPT=
+    [ "x$IPTABLES_SAVE_COUNTER" = "xyes" ] && OPT="-c"
+
+    $IPTABLES-restore $OPT $IPTABLES_DATA
+    if [ $? -eq 0 ]; then
+	success; echo
+    else
+	failure; echo; echo "Firewall rules are not changed."; return 1
+    fi
+
+    # Load additional modules (helpers)
+    if [ -n "$IPTABLES_MODULES" ]; then
+	echo -n $"${IPTABLES}: Loading additional modules: "
+	ret=0
+	for mod in $IPTABLES_MODULES; do
+	    echo -n "$mod "
+	    modprobe $mod > /dev/null 2>&1
+	    let ret+=$?;
+	done
+	[ $ret -eq 0 ] && success || failure
+	echo
+    fi
+
+    # Load sysctl settings
+    load_sysctl
+
+    return $ret
+}
+
 restart() {
     [ "x$IPTABLES_SAVE_ON_RESTART" = "xyes" ] && save
     stop
@@ -333,6 +415,10 @@ case "$1" in
 	restart
 	RETVAL=$?
 	;;
+    reload)
+	[ -e "$VAR_SUBSYS_IPTABLES" ] && reload
+	RETVAL=$?
+	;;      
     condrestart|try-restart)
 	[ ! -e "$VAR_SUBSYS_IPTABLES" ] && exit 0
 	restart
@@ -343,7 +429,6 @@ case "$1" in
 	RETVAL=$?
 	;;
     panic)
-	flush_n_delete
 	set_policy DROP
 	RETVAL=$?
         ;;
@@ -352,7 +437,7 @@ case "$1" in
 	RETVAL=$?
 	;;
     *)
-	echo $"Usage: ${IPTABLES} {start|stop|restart|condrestart|status|panic|save}"
+	echo $"Usage: ${IPTABLES} {start|stop|reload|restart|condrestart|status|panic|save}"
 	RETVAL=2
 	;;
 esac

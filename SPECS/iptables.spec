@@ -1,58 +1,32 @@
-# enable systemd for Fedora-16 and RHEL-7
-%if 0%{?fedora} > 15 || 0%{?rhel} > 6
-    %bcond_without systemd
-%else
-    %bcond_with systemd
-%endif
-
 # install init scripts to /usr/libexec with systemd
-%if %{with systemd}
-    %define script_path %{_libexecdir}/iptables
-%else
-    %define script_path /etc/rc.d/init.d
-%endif
+%define script_path %{_libexecdir}/iptables
 
 # service legacy actions (RHBZ#748134)
 %define legacy_actions %{_libexecdir}/initscripts/legacy-actions
 
-# default service
-%if 0%{?fedora} < 18 && 0%{?rhel} < 7
-    %bcond_without default_service
-%else
-    %bcond_with default_service
-%endif
-
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
-Version: 1.4.19.1
-Release: 1%{?dist}
+Version: 1.4.21
+Release: 13%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
 Source3: iptables.service
 Source4: iptables.save-legacy
+Source5: sysconfig_iptables
+Source6: sysconfig_ip6tables
+Source7: iptables.panic-legacy
+Patch1: iptables-1.4.21-rhbz_1054871.patch
 Group: System Environment/Base
 URL: http://www.netfilter.org/
-BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 License: GPLv2
+# libnetfilter_conntrack is needed for xt_connlabel
+BuildRequires: libnetfilter_conntrack-devel >= 1.0.4
 # libnfnetlink-devel is requires for nfnl_osf
 BuildRequires: libnfnetlink-devel
 BuildRequires: libselinux-devel
 BuildRequires: kernel-headers
-Conflicts: kernel < 2.4.20
-%if %{with systemd}
-BuildRequires: systemd-units
-%endif
-
-# Virtually provide libxtables.so.9 to be able to create the buildroot.
-# The iproute package is needed by iniscripts. iproute also provides tc, which
-# requires libxtables.
-%if %{_lib} == lib64
-Provides: libxtables.so.9()(64bit)
-%else
-Provides: libxtables.so.9
-%endif
-
+BuildRequires: systemd
 
 %description
 The iptables utility controls the network packet filtering code in the
@@ -62,7 +36,7 @@ you should install this package.
 %package devel
 Summary: Development package for iptables
 Group: System Environment/Base
-Requires: %{name} = %{version}-%{release}
+Requires: %{name}%{?_isa} = %{version}-%{release}
 Requires: pkgconfig
 
 %description devel
@@ -75,23 +49,15 @@ stable and may change with every new version. It is therefore unsupported.
 Summary: iptables and ip6tables services for iptables
 Group: System Environment/Base
 Requires: %{name} = %{version}-%{release}
-%if %{with systemd}
-Requires(post): systemd-units
-Requires(post): systemd-sysv
-Requires(preun): systemd-units
-Requires(postun): systemd-units
-Conflicts: systemd < 38
-Conflicts: filesystem < 3
-%else
-Requires(post): chkconfig
-Requires(preun): chkconfig
-%endif
+Requires(post): systemd
+Requires(preun): systemd
+Requires(postun): systemd
 # provide and obsolete old main package
 Provides: %{name} = 1.4.16.1
-Obsoletes: %{name} <= 1.4.16.1
-# provide and obsolte ipv6 sub package
+Obsoletes: %{name} < 1.4.16.1
+# provide and obsolete ipv6 sub package
 Provides: %{name}-ipv6 = 1.4.11.1
-Obsoletes: %{name}-ipv6 <= 1.4.11.1
+Obsoletes: %{name}-ipv6 < 1.4.11.1
 
 %description services
 iptables services for IPv4 and IPv6
@@ -112,10 +78,11 @@ Currently only provides nfnl_osf with the pf.os database.
 
 %prep
 %setup -q
+%patch1 -p1 -b .rhbz_1054871
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing " \
-./configure --enable-devel --bindir=%{_bindir} --sbindir=%{_sbindir} --sysconfdir=/etc --libdir=%{_libdir} --libexecdir=%{_libdir} --mandir=%{_mandir} --includedir=%{_includedir} --datadir=%{_datadir}  --with-kernel=/usr --with-kbuild=/usr --with-ksource=/usr
+%configure --enable-devel --with-kernel=/usr --with-kbuild=/usr --with-ksource=/usr
 
 # do not use rpath
 sed -i 's|^hardcode_libdir_flag_spec=.*|hardcode_libdir_flag_spec=""|g' libtool
@@ -126,8 +93,6 @@ rm -f include/linux/types.h
 make %{?_smp_mflags}
 
 %install
-rm -rf %{buildroot}
-
 make install DESTDIR=%{buildroot} 
 # remove la file(s)
 rm -f %{buildroot}/%{_libdir}/*.la
@@ -146,113 +111,76 @@ install -d -m 755 %{buildroot}%{script_path}
 install -c -m 755 %{SOURCE1} %{buildroot}%{script_path}/iptables.init
 sed -e 's;iptables;ip6tables;g' -e 's;IPTABLES;IP6TABLES;g' < %{SOURCE1} > ip6tables.init
 install -c -m 755 ip6tables.init %{buildroot}%{script_path}/ip6tables.init
-install -d -m 755 %{buildroot}/etc/sysconfig
-install -c -m 755 %{SOURCE2} %{buildroot}/etc/sysconfig/iptables-config
+install -d -m 755 %{buildroot}%{_sysconfdir}/sysconfig
+install -c -m 600 %{SOURCE2} %{buildroot}%{_sysconfdir}/sysconfig/iptables-config
 sed -e 's;iptables;ip6tables;g' -e 's;IPTABLES;IP6TABLES;g' < %{SOURCE2} > ip6tables-config
-install -c -m 755 ip6tables-config %{buildroot}/etc/sysconfig/ip6tables-config
+install -c -m 600 ip6tables-config %{buildroot}%{_sysconfdir}/sysconfig/ip6tables-config
+install -c -m 600 %{SOURCE5} %{buildroot}%{_sysconfdir}/sysconfig/iptables
+install -c -m 600 %{SOURCE6} %{buildroot}%{_sysconfdir}/sysconfig/ip6tables
 
-%if %{with systemd}
 # install systemd service files
 install -d -m 755 %{buildroot}/%{_unitdir}
 install -c -m 644 %{SOURCE3} %{buildroot}/%{_unitdir}
 sed -e 's;iptables;ip6tables;g' -e 's;IPv4;IPv6;g' -e 's;/usr/libexec/ip6tables;/usr/libexec/iptables;g' < %{SOURCE3} > ip6tables.service
 install -c -m 644 ip6tables.service %{buildroot}/%{_unitdir}
-%endif
 
 # install legacy actions for service command
 install -d %{buildroot}/%{legacy_actions}/iptables
 install -d %{buildroot}/%{legacy_actions}/ip6tables
 install -c -m 755 %{SOURCE4} %{buildroot}/%{legacy_actions}/iptables/save
+install -c -m 755 %{SOURCE7} %{buildroot}/%{legacy_actions}/iptables/panic
 sed -e 's;iptables.init;ip6tables.init;g' -e 's;IPTABLES;IP6TABLES;g' < %{buildroot}/%{legacy_actions}/iptables/save > ip6tabes.save-legacy
+sed -e 's;iptables.init;ip6tables.init;g' -e 's;IPTABLES;IP6TABLES;g' < %{buildroot}/%{legacy_actions}/iptables/panic > ip6tabes.panic-legacy
 install -c -m 755 ip6tabes.save-legacy %{buildroot}/%{legacy_actions}/ip6tables/save
+install -c -m 755 ip6tabes.panic-legacy %{buildroot}/%{legacy_actions}/ip6tables/panic
 
+%if 0%{?rhel}
+%pre
+for p in %{_sysconfdir}/alternatives/iptables.*; do
+    if [ -h "$p" ]; then
+        ipt=$(readlink "$p")
+        echo "Removing alternatives for ${p##*/} with path $ipt"
+        %{_sbindir}/alternatives --remove "${p##*/}" "$ipt"
+    fi
+done
+for p in %{_sysconfdir}/alternatives/ip6tables.*; do
+    if [ -h "$p" ]; then
+        ipt=$(readlink "$p")
+        echo "Removing alternatives for ${p##*/} with path $ipt"
+        %{_sbindir}/alternatives --remove "${p##*/}" "$ipt"
+        # create dummy alternatives entry to fix iptables-ipv6 package removal
+        %{_sbindir}/alternatives --install /sbin/ip6tables.dummy "${p##*/}" "$ipt" 90
+    fi
+done
 
-%clean
-rm -rf %{buildroot}
-
-%if %{with systemd}
+%posttrans
+# cleanup dummy alternatives to fix iptables-ipv6 package removal if still there
+for p in %{_sysconfdir}/alternatives/ip6tables.*; do
+    if [ -h "$p" ]; then
+        ipt=$(readlink "$p")
+        %{_sbindir}/alternatives --remove "${p##*/}" "$ipt" || :
+    fi
+done
+%endif
 
 %post -p /sbin/ldconfig
 
 %postun -p /sbin/ldconfig
 
 %post services
-if [ $1 -eq 1 ] ; then # Initial installation
-   /bin/systemctl daemon-reload >/dev/null 2>&1 || :
-%if %{with default_service}
-   /bin/systemctl enable iptables.service >/dev/null 2>&1 || :
-   /bin/systemctl enable ip6tables.service >/dev/null 2>&1 || :
-%endif
-fi
+%systemd_post iptables.service ip6tables.service
 
 %preun services
-if [ $1 -eq 0 ]; then # Package removal, not upgrade
-   /bin/systemctl --no-reload disable iptables.service > /dev/null 2>&1 || :
-   /bin/systemctl --no-reload disable ip6tables.service > /dev/null 2>&1 || :
-   /bin/systemctl stop iptables.service > /dev/null 2>&1 || :
-   /bin/systemctl stop ip6tables.service > /dev/null 2>&1 || :
-fi
+%systemd_preun iptables.service ip6tables.service
 
 %postun services
 /sbin/ldconfig
-/bin/systemctl daemon-reload >/dev/null 2>&1 || :
-if [ $1 -ge 1 ] ; then # Package upgrade, not uninstall
-   /bin/systemctl try-restart iptables.service >/dev/null 2>&1 || :
-   /bin/systemctl try-restart ip6tables.service >/dev/null 2>&1 || :
-fi
-
-%triggerun -- iptables < 1.4.11.1-3
-# To apply saved runlevel, use systemd-sysv-convert --apply iptables
-%{_bindir}/systemd-sysv-convert --save iptables >/dev/null 2>&1 ||:
-
-# Autostart
-%if %{with default_service}
-/bin/systemctl --no-reload enable iptables.service >/dev/null 2>&1 ||:
-%endif
-
-# Delete from sysv management, try to restart service
-/sbin/chkconfig --del iptables >/dev/null 2>&1 || :
-/bin/systemctl try-restart iptables.service >/dev/null 2>&1 || :
-
-%triggerun -- iptables-ipv6 < 1.4.11.1-3
-# To apply saved runlevel, use systemd-sysv-convert --apply iptables
-%{_bindir}/systemd-sysv-convert --save ip6tables >/dev/null 2>&1 ||:
-
-# Autostart
-%if %{with default_service}
-/bin/systemctl --no-reload enable ip6tables.service >/dev/null 2>&1 ||:
-%endif
-
-# Delete from sysv management, try to restart service
-/sbin/chkconfig --del ip6tables >/dev/null 2>&1 || :
-/bin/systemctl try-restart ip6tables.service >/dev/null 2>&1 || :
-
-%else # no systemd
-
-%post -p /sbin/ldconfig
-
-%post services
-/sbin/chkconfig --add iptables
-/sbin/chkconfig --add ip6tables
-
-%preun services
-if [ $1 -eq 0 ]; then
-   /sbin/chkconfig --del iptables
-   /sbin/chkconfig --del ip6tables
-fi
-
-%postun -p /sbin/ldconfig
-
-%endif # systemd
-
+%systemd_postun_with_restart iptables.service ip6tables.service
 
 %files
-%defattr(-,root,root)
-%doc COPYING INSTALL INCOMPATIBILITIES
-%config(noreplace) %attr(0600,root,root) /etc/sysconfig/iptables-config
-%config(noreplace) %attr(0600,root,root) /etc/sysconfig/ip6tables-config
-%dir %{_sysconfdir}/xtables/
-%config(noreplace) %{_sysconfdir}/xtables/connlabel.conf
+%doc COPYING INCOMPATIBILITIES
+%config(noreplace) %attr(0600,root,root) %{_sysconfdir}/sysconfig/iptables-config
+%config(noreplace) %attr(0600,root,root) %{_sysconfdir}/sysconfig/ip6tables-config
 %{_sbindir}/iptables*
 %{_sbindir}/ip6tables*
 %{_sbindir}/xtables-multi
@@ -268,7 +196,6 @@ fi
 %{_libdir}/libxtables.so.*
 
 %files devel
-%defattr(-,root,root)
 %dir %{_includedir}/iptables
 %{_includedir}/iptables/*.h
 %{_includedir}/*.h
@@ -284,17 +211,19 @@ fi
 %{_libdir}/pkgconfig/xtables.pc
 
 %files services
+%dir %{script_path}
 %attr(0755,root,root) %{script_path}/iptables.init
 %attr(0755,root,root) %{script_path}/ip6tables.init
-%if %{with systemd}
-%dir %{script_path}
+%config(noreplace) %attr(0600,root,root) %{_sysconfdir}/sysconfig/iptables
+%config(noreplace) %attr(0600,root,root) %{_sysconfdir}/sysconfig/ip6tables
 %{_unitdir}/iptables.service
 %{_unitdir}/ip6tables.service
-%endif
 %dir %{legacy_actions}/iptables
 %{legacy_actions}/iptables/save
+%{legacy_actions}/iptables/panic
 %dir %{legacy_actions}/ip6tables
 %{legacy_actions}/ip6tables/save
+%{legacy_actions}/ip6tables/panic
 
 %files utils
 %{_sbindir}/nfnl_osf
@@ -303,6 +232,112 @@ fi
 
 
 %changelog
+* Thu Mar 27 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-13
+- fixed further update issues from RHEL-6 to RHEL-7 (RHBZ#1043901)
+
+* Tue Mar 11 2014 Jiri Popelka <jpopelka@redhat.com> - 1.4.21-12
+- Fixed iptables-save man page completely wrong (RHBZ#1054871)
+
+* Mon Mar 10 2014 Jiri Popelka <jpopelka@redhat.com> - 1.4.21-11
+- Added missing "panic" action (RHBZ#1067670)
+
+* Mon Feb 24 2014 Jiri Popelka <jpopelka@redhat.com> - 1.4.21-10
+- Fixed missing reload action for iptables service (RHBZ#1066007)
+
+* Fri Feb 21 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-9
+- fixed missing system hang at shutdown if root device is network based
+  (RHBZ#1007934)
+- Fixed iptables-save man page completely wrong (RHBZ#1054871)
+- Fixed missing reload action for iptables service (RHBZ#1066007)
+- Fixed regressions from RHEL-6 iptables services (RHBZ#1067670)
+
+* Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 1.4.21-8
+- Mass rebuild 2014-01-24
+
+* Wed Jan 15 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-7
+- libnetfilter_conntrack is needed in version 1.0.4 for connlabel
+  See: RHBZ#1053702
+
+* Wed Jan 15 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-6
+- Enable connlabel support again, needs libnetfilter_conntrack
+
+* Wed Jan 15 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-6
+- fixed update from RHEL-6 to RHEL-7 (RHBZ#1043901)
+
+* Tue Jan 14 2014 Jiri Popelka <jpopelka@redhat.com> - 1.4.21-5
+- chmod /etc/sysconfig/ip[6]tables 755 -> 600
+
+* Fri Jan 10 2014 Jiri Popelka <jpopelka@redhat.com> - 1.4.21-4
+- drop virtual provide for xtables.so.9
+- add default /etc/sysconfig/ip[6]tables (RHBZ#1034494)
+
+* Thu Jan 09 2014 Jiri Popelka <jpopelka@redhat.com> - 1.4.21-3
+- no need to support the pre-systemd things
+- use systemd macros (#850166)
+- remove scriptlets for migrating to a systemd unit from a SysV initscripts
+- ./configure -> %%configure
+- spec clean up
+- fix self-obsoletion
+
+* Thu Jan  9 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-2
+- fixed system hang at shutdown if root device is network based (RHBZ#1007934)
+  Thanks to Rodrigo A B Freire for the patch
+
+* Thu Jan  9 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-1
+- no connlabel.conf upstream anymore
+- new version 1.4.21
+  - doc: clarify DEBUG usage macro
+  - iptables: use autoconf to process .in man pages
+  - extensions: libipt_ULOG: man page should mention NFLOG as replacement
+  - extensions: libxt_connlabel: use libnetfilter_conntrack
+  - Introduce a new revision for the set match with the counters support
+  - libxt_CT: Add the "NOTRACK" alias
+  - libip6t_mh: Correct command to list named mh types in manpage
+  - extensions: libxt_DNAT, libxt_REDIRECT, libxt_NETMAP, libxt_SNAT, libxt_MASQUERADE, libxt_LOG: rename IPv4 manpage and tell about IPv6 support
+  - extensions: libxt_LED: fix parsing of delay
+  - ip{6}tables-restore: fix breakage due to new locking approach
+  - libxt_recent: restore minimum value for --seconds
+  - iptables-xml: fix parameter parsing (similar to 2165f38)
+  - extensions: add copyright statements
+  - xtables: improve get_modprobe handling
+  - ip[6]tables: Add locking to prevent concurrent instances
+  - iptables: Fix connlabel.conf install location
+  - ip6tables: don't print out /128
+  - libip6t_LOG: target output is different to libipt_LOG
+  - build: additional include path required after UAPI changes
+  - iptables: iptables-xml: Fix various parsing bugs
+  - libxt_recent: restore reap functionality to recent module
+  - build: fail in configure on missing dependency with --enable-bpf-compiler
+  - extensions: libxt_NFQUEUE: add --queue-cpu-fanout parameter
+  - extensions: libxt_set, libxt_SET: check the set family too
+  - ip6tables: Use consistent exit code for EAGAIN
+  - iptables: libxt_hashlimit.man: correct address
+  - iptables: libxt_conntrack.man extraneous commas
+  - iptables: libip(6)t_REJECT.man default icmp types
+  - iptables: iptables-xm1.1 correct man section
+  - iptables: libxt_recent.{c,man} dead URL
+  - iptables: libxt_string.man add examples
+  - extensions: libxt_LOG: use generic syslog reference in manpage
+  - iptables: extensions/GNUMakefile.in use CPPFLAGS
+  - iptables: correctly reference generated file
+  - ip[6]tables: fix incorrect alignment in commands_v_options
+  - build: add software version to manpage first line at configure stage
+  - extensions: libxt_cluster: add note on arptables-jf
+  - utils: nfsynproxy: fix error while compiling the BPF filter
+  - extensions: add SYNPROXY extension
+  - utils: add nfsynproxy tool
+  - iptables: state match incompatibilty across versions
+  - libxtables: xtables_ipmask_to_numeric incorrect with non-CIDR masks
+  - iptables: improve chain name validation
+  - iptables: spurious error in load_extension
+  - xtables: trivial spelling fix
+
+* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 1.4.19.1-2
+- Mass rebuild 2013-12-27
+
+* Sun Dec 22 2013 Ville Skyttä <ville.skytta@iki.fi> - 1.4.19.1-2
+- Drop INSTALL from docs, escape macros in %%changelog.
+
 * Wed Jul 31 2013 Thomas Woerner <twoerner@redhat.com> 1.4.19.1-1
 - new version 1.4.19.1
   - libxt_NFQUEUE: fix bypass option documentation
@@ -372,7 +407,7 @@ fi
 * Fri Oct 12 2012 Thomas Woerner <twoerner@redhat.com> 1.4.16.2-2
 - new sub package services providing the systemd services (RHBZ#862922)
 - new sub package utils: provides nfnl_osf and the pf.os database
-- using %{_libexecdir}/iptables as script path for the original init scripts
+- using %%{_libexecdir}/iptables as script path for the original init scripts
 - added service iptables save funcitonality using the new way provided by 
   initscripts 9.37.1 (RHBZ#748134)
 - added virtual provide for libxtables.so.7
