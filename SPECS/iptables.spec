@@ -17,6 +17,7 @@ Source5: sysconfig_iptables
 Source6: sysconfig_ip6tables
 Source7: iptables.panic-legacy
 Patch1: iptables-1.4.21-rhbz_1054871.patch
+Patch100: imq-iptables-1.4.13.diff
 Group: System Environment/Base
 URL: http://www.netfilter.org/
 License: GPLv2
@@ -79,6 +80,7 @@ Currently only provides nfnl_osf with the pf.os database.
 %prep
 %setup -q
 %patch1 -p1 -b .rhbz_1054871
+%patch100 -p1
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing " \
@@ -232,6 +234,9 @@ done
 
 
 %changelog
+* Wed Nov 05 2014 ClearFoundation <developer@clearfoundation.com> 1.4.21-13.clear
+- added IMQ patches
+
 * Thu Mar 27 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-13
 - fixed further update issues from RHEL-6 to RHEL-7 (RHBZ#1043901)
 
