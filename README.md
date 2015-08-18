@@ -2,9 +2,6 @@
 
 Forked version of iptables with ClearOS changes applied
 
-## Update usage
-  Add __#kojibuild__ to commit message to automatically build
-
 * git clone git+ssh://git@github.com/clearos/iptables.git
 * cd iptables
 * git checkout c7
