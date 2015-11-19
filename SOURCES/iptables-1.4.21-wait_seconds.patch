@@ -1,0 +1,288 @@
+twoerner: Adapted version of the upstream patch for 1.4.21
+
+
+From aaa4ace72ba1d195bbf436134a336816c33f7bd0 Mon Sep 17 00:00:00 2001
+From: Jiri Popelka <jpopelka@redhat.com>
+Date: Fri, 4 Jul 2014 15:50:41 +0200
+Subject: iptables: add optional [seconds] argument to -w
+
+This patch adds an optional numeric argument
+to -w option (added with 93587a0) so one can
+specify how long to wait for an exclusive lock.
+
+If the value isn't specified it works as before,
+i.e. program waits indefinitely.
+
+If user specifies it, program exits after
+the given time interval passes.
+
+This patch also adds the -w/--wait to nftables
+compat code, so the parser doesn't complain.
+
+[ In the original patch, iptables-compat -w X was not working,
+  I have fixed by adding the dummy code not to break scripts
+  using the new optional argument --pablo ]
+
+Signed-off-by: Jiri Popelka <jpopelka@redhat.com>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff --git a/iptables/ip6tables.c b/iptables/ip6tables.c
+index 2ebfd6c..8db13b4 100644
+--- a/iptables/ip6tables.c
++++ b/iptables/ip6tables.c
+@@ -102,7 +102,7 @@ static struct option original_opts[] = {
+ 	{.name = "numeric",       .has_arg = 0, .val = 'n'},
+ 	{.name = "out-interface", .has_arg = 1, .val = 'o'},
+ 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
+-	{.name = "wait",          .has_arg = 0, .val = 'w'},
++	{.name = "wait",          .has_arg = 2, .val = 'w'},
+ 	{.name = "exact",         .has_arg = 0, .val = 'x'},
+ 	{.name = "version",       .has_arg = 0, .val = 'V'},
+ 	{.name = "help",          .has_arg = 2, .val = 'h'},
+@@ -258,7 +258,7 @@ exit_printhelp(const struct xtables_rule_match *matches)
+ "				network interface name ([+] for wildcard)\n"
+ "  --table	-t table	table to manipulate (default: `filter')\n"
+ "  --verbose	-v		verbose mode\n"
+-"  --wait	-w		wait for the xtables lock\n"
++"  --wait	-w [seconds]	wait for the xtables lock\n"
+ "  --line-numbers		print line numbers when listing\n"
+ "  --exact	-x		expand numbers (display exact values)\n"
+ /*"[!] --fragment	-f		match second or further fragments only\n"*/
+@@ -1322,7 +1322,7 @@ int do_command6(int argc, char *argv[], char **table,
+ 	struct in6_addr *smasks = NULL, *dmasks = NULL;
+ 
+ 	int verbose = 0;
+-	bool wait = false;
++	int wait = 0;
+ 	const char *chain = NULL;
+ 	const char *shostnetworkmask = NULL, *dhostnetworkmask = NULL;
+ 	const char *policy = NULL, *newname = NULL;
+@@ -1358,7 +1358,7 @@ int do_command6(int argc, char *argv[], char **table,
+ 
+ 	opts = xt_params->orig_opts;
+ 	while ((cs.c = getopt_long(argc, argv,
+-	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvwnt:m:xc:g:46",
++	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvw::nt:m:xc:g:46",
+ 					   opts, NULL)) != -1) {
+ 		switch (cs.c) {
+ 			/*
+@@ -1602,7 +1602,16 @@ int do_command6(int argc, char *argv[], char **table,
+ 					      "You cannot use `-w' from "
+ 					      "ip6tables-restore");
+ 			}
+-			wait = true;
++			wait = -1;
++			if (optarg) {
++				if (sscanf(optarg, "%i", &wait) != 1)
++					xtables_error(PARAMETER_PROBLEM,
++						"wait seconds not numeric");
++			} else if (optind < argc && argv[optind][0] != '-'
++						 && argv[optind][0] != '!')
++				if (sscanf(argv[optind++], "%i", &wait) != 1)
++					xtables_error(PARAMETER_PROBLEM,
++						"wait seconds not numeric");
+ 			break;
+ 
+ 		case 'm':
+@@ -1753,8 +1762,11 @@ int do_command6(int argc, char *argv[], char **table,
+ 
+ 	/* Attempt to acquire the xtables lock */
+ 	if (!restore && !xtables_lock(wait)) {
+-		fprintf(stderr, "Another app is currently holding the xtables lock. "
+-			"Perhaps you want to use the -w option?\n");
++		fprintf(stderr, "Another app is currently holding the xtables lock. ");
++		if (wait == 0)
++			fprintf(stderr, "Perhaps you want to use the -w option?\n");
++		else
++			fprintf(stderr, "Stopped waiting after %ds.\n", wait);
+ 		xtables_free_opts(1);
+ 		exit(RESOURCE_PROBLEM);
+ 	}
+diff --git a/iptables/iptables.8.in b/iptables/iptables.8.in
+index 8ef222e..ceba5dc 100644
+--- a/iptables/iptables.8.in
++++ b/iptables/iptables.8.in
+@@ -361,12 +361,13 @@ For appending, insertion, deletion and replacement, this causes
+ detailed information on the rule or rules to be printed. \fB\-v\fP may be
+ specified multiple times to possibly emit more detailed debug statements.
+ .TP
+-\fB\-w\fP, \fB\-\-wait\fP
++\fB\-w\fP, \fB\-\-wait\fP [\fIseconds\fP]
+ Wait for the xtables lock.
+ To prevent multiple instances of the program from running concurrently,
+ an attempt will be made to obtain an exclusive lock at launch.  By default,
+ the program will exit if the lock cannot be obtained.  This option will
+-make the program wait until the exclusive lock can be obtained.
++make the program wait (indefinitely or for optional \fIseconds\fP) until
++the exclusive lock can be obtained.
+ .TP
+ \fB\-n\fP, \fB\-\-numeric\fP
+ Numeric output.
+diff --git a/iptables/iptables.c b/iptables/iptables.c
+index 471bff0..88953c4 100644
+--- a/iptables/iptables.c
++++ b/iptables/iptables.c
+@@ -99,7 +99,7 @@ static struct option original_opts[] = {
+ 	{.name = "numeric",       .has_arg = 0, .val = 'n'},
+ 	{.name = "out-interface", .has_arg = 1, .val = 'o'},
+ 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
+-	{.name = "wait",          .has_arg = 0, .val = 'w'},
++	{.name = "wait",          .has_arg = 2, .val = 'w'},
+ 	{.name = "exact",         .has_arg = 0, .val = 'x'},
+ 	{.name = "fragments",     .has_arg = 0, .val = 'f'},
+ 	{.name = "version",       .has_arg = 0, .val = 'V'},
+@@ -252,7 +252,7 @@ exit_printhelp(const struct xtables_rule_match *matches)
+ "				network interface name ([+] for wildcard)\n"
+ "  --table	-t table	table to manipulate (default: `filter')\n"
+ "  --verbose	-v		verbose mode\n"
+-"  --wait	-w		wait for the xtables lock\n"
++"  --wait	-w [seconds]	wait for the xtables lock\n"
+ "  --line-numbers		print line numbers when listing\n"
+ "  --exact	-x		expand numbers (display exact values)\n"
+ "[!] --fragment	-f		match second or further fragments only\n"
+@@ -1318,7 +1318,7 @@ int do_command4(int argc, char *argv[], char **table,
+ 	struct in_addr *daddrs = NULL, *dmasks = NULL;
+ 
+ 	int verbose = 0;
+-	bool wait = false;
++	int wait = 0;
+ 	const char *chain = NULL;
+ 	const char *shostnetworkmask = NULL, *dhostnetworkmask = NULL;
+ 	const char *policy = NULL, *newname = NULL;
+@@ -1351,10 +1351,9 @@ int do_command4(int argc, char *argv[], char **table,
+ 	/* Suppress error messages: we may add new options if we
+            demand-load a protocol. */
+ 	opterr = 0;
+-
+ 	opts = xt_params->orig_opts;
+ 	while ((cs.c = getopt_long(argc, argv,
+-	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvwnt:m:xc:g:46",
++	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvw::nt:m:xc:g:46",
+ 					   opts, NULL)) != -1) {
+ 		switch (cs.c) {
+ 			/*
+@@ -1596,7 +1595,16 @@ int do_command4(int argc, char *argv[], char **table,
+ 					      "You cannot use `-w' from "
+ 					      "iptables-restore");
+ 			}
+-			wait = true;
++			wait = -1;
++			if (optarg) {
++				if (sscanf(optarg, "%i", &wait) != 1)
++					xtables_error(PARAMETER_PROBLEM,
++						"wait seconds not numeric");
++			} else if (optind < argc && argv[optind][0] != '-'
++						 && argv[optind][0] != '!')
++				if (sscanf(argv[optind++], "%i", &wait) != 1)
++					xtables_error(PARAMETER_PROBLEM,
++						"wait seconds not numeric");
+ 			break;
+ 
+ 		case 'm':
+@@ -1750,8 +1758,11 @@ int do_command4(int argc, char *argv[], char **table,
+ 
+ 	/* Attempt to acquire the xtables lock */
+ 	if (!restore && !xtables_lock(wait)) {
+-		fprintf(stderr, "Another app is currently holding the xtables lock. "
+-			"Perhaps you want to use the -w option?\n");
++		fprintf(stderr, "Another app is currently holding the xtables lock. ");
++		if (wait == 0)
++			fprintf(stderr, "Perhaps you want to use the -w option?\n");
++		else
++			fprintf(stderr, "Stopped waiting after %ds.\n", wait);
+ 		xtables_free_opts(1);
+ 		exit(RESOURCE_PROBLEM);
+ 	}
+diff --git a/iptables/xshared.c b/iptables/xshared.c
+index 6c9992e..b18022e 100644
+--- a/iptables/xshared.c
++++ b/iptables/xshared.c
+@@ -243,10 +243,11 @@ void xs_init_match(struct xtables_match *match)
+ 		match->init(match->m);
+ }
+ 
+-bool xtables_lock(bool wait)
++bool xtables_lock(int wait)
+ {
+ 	int i = 0, ret, xt_socket;
+ 	struct sockaddr_un xt_addr;
++	int waited = 0;
+ 
+ 	memset(&xt_addr, 0, sizeof(xt_addr));
+ 	xt_addr.sun_family = AF_UNIX;
+@@ -261,11 +262,12 @@ bool xtables_lock(bool wait)
+ 			   offsetof(struct sockaddr_un, sun_path)+XT_SOCKET_LEN);
+ 		if (ret == 0)
+ 			return true;
+-		else if (wait == false)
++		else if (wait >= 0 && waited >= wait)
+ 			return false;
+ 		if (++i % 2 == 0)
+ 			fprintf(stderr, "Another app is currently holding the xtables lock; "
+-				"waiting for it to exit...\n");
++				"waiting (%ds) for it to exit...\n", waited);
++		waited++;
+ 		sleep(1);
+ 	}
+ }
+diff --git a/iptables/xshared.h b/iptables/xshared.h
+index 27c5b78..40dd915 100644
+--- a/iptables/xshared.h
++++ b/iptables/xshared.h
+@@ -84,7 +84,7 @@ extern struct xtables_match *load_proto(struct iptables_command_state *);
+ extern int subcmd_main(int, char **, const struct subcommand *);
+ extern void xs_init_target(struct xtables_target *);
+ extern void xs_init_match(struct xtables_match *);
+-extern bool xtables_lock(bool wait);
++extern bool xtables_lock(int wait);
+ 
+ extern const struct xtables_afinfo *afinfo;
+ 
+#diff --git a/iptables/xtables.c b/iptables/xtables.c
+#index 45a5ac6..d661dd1 100644
+#--- a/iptables/xtables.c
+#+++ b/iptables/xtables.c
+#@@ -85,6 +85,7 @@ static struct option original_opts[] = {
+# 	{.name = "numeric",	  .has_arg = 0, .val = 'n'},
+# 	{.name = "out-interface", .has_arg = 1, .val = 'o'},
+# 	{.name = "verbose",	  .has_arg = 0, .val = 'v'},
+#+	{.name = "wait",	  .has_arg = 2, .val = 'w'},
+# 	{.name = "exact",	  .has_arg = 0, .val = 'x'},
+# 	{.name = "fragments",	  .has_arg = 0, .val = 'f'},
+# 	{.name = "version",	  .has_arg = 0, .val = 'V'},
+#@@ -683,6 +684,7 @@ int do_commandx(struct nft_handle *h, int argc, char *argv[], char **table,
+# {
+# 	struct iptables_command_state cs;
+# 	int verbose = 0;
+#+	int wait = 0;
+# 	const char *chain = NULL;
+# 	const char *policy = NULL, *newname = NULL;
+# 	unsigned int rulenum = 0, command = 0;
+#@@ -722,7 +724,7 @@ int do_commandx(struct nft_handle *h, int argc, char *argv[], char **table,
+# 
+# 	opts = xt_params->orig_opts;
+# 	while ((cs.c = getopt_long(argc, argv,
+#-	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvnt:m:xc:g:46",
+#+	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvw::nt:m:xc:g:46",
+# 					   opts, NULL)) != -1) {
+# 		switch (cs.c) {
+# 			/*
+#@@ -1007,6 +1009,15 @@ int do_commandx(struct nft_handle *h, int argc, char *argv[], char **table,
+# 					      "You cannot use `-w' from "
+# 					      "iptables-restore");
+# 			}
+#+			if (optarg) {
+#+				if (sscanf(optarg, "%i", &wait) != 1)
+#+					xtables_error(PARAMETER_PROBLEM,
+#+						      "wait seconds not numeric");
+#+			} else if (optind < argc && argv[optind][0] != '-'
+#+				   && argv[optind][0] != '!')
+#+				if (sscanf(argv[optind++], "%i", &wait) != 1)
+#+					xtables_error(PARAMETER_PROBLEM,
+#+						      "wait seconds not numeric");
+# 			break;
+# 
+# 		case '0':
+-- 
+cgit v0.10.2
+
