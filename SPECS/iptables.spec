@@ -7,7 +7,7 @@
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.21
-Release: 13%{?dist}
+Release: 16%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
@@ -17,6 +17,9 @@ Source5: sysconfig_iptables
 Source6: sysconfig_ip6tables
 Source7: iptables.panic-legacy
 Patch1: iptables-1.4.21-rhbz_1054871.patch
+Patch2: iptables-1.4.21-libxt_cgroup.patch
+Patch3: iptables-1.4.21-wait_seconds.patch
+Patch4: iptables-1.4.21-flock_wait.patch
 Patch100: imq-iptables-1.4.13.diff
 Group: System Environment/Base
 URL: http://www.netfilter.org/
@@ -50,6 +53,7 @@ stable and may change with every new version. It is therefore unsupported.
 Summary: iptables and ip6tables services for iptables
 Group: System Environment/Base
 Requires: %{name} = %{version}-%{release}
+Requires: /bin/bash
 Requires(post): systemd
 Requires(preun): systemd
 Requires(postun): systemd
@@ -80,6 +84,9 @@ Currently only provides nfnl_osf with the pf.os database.
 %prep
 %setup -q
 %patch1 -p1 -b .rhbz_1054871
+%patch2 -p1 -b .libxt_cgroup
+%patch3 -p1 -b .wait_seconds
+%patch4 -p1 -b .flock_wait
 %patch100 -p1
 
 %build
@@ -234,8 +241,21 @@ done
 
 
 %changelog
-* Wed Nov 05 2014 ClearFoundation <developer@clearfoundation.com> 1.4.21-13.clear
+* Thu Dec 03 2015 ClearFoundation <developer@clearfoundation.com> 1.4.21-16.clear
 - added IMQ patches
+
+* Fri Sep 18 2015 Thomas Woerner <twoerner@redhat.com> 1.4.21-16
+- Fix important coverity findings: missing include for flock and use bash for init script
+
+* Fri Sep 18 2015 Thomas Woerner <twoerner@redhat.com> 1.4.21-15
+- Use systemd AssertPathExists for /etc/sysconfig/iptables (RHBZ#1200415)
+
+* Tue Jun 30 2015 Thomas Woerner <twoerner@redhat.com> 1.4.21-14
+- Add cgroup support (RHBZ#1058660)
+- Add wait seonds support for commands (RHBZ#1156411)
+- Add dhcpv6-client in default IPv6 firewall rules (RHBZ#1169036)
+- Add message for init script error returns (RHBZ#1200415)
+- Use flock for wait option (RHBZ#1202435)
 
 * Thu Mar 27 2014 Thomas Woerner <twoerner@redhat.com> 1.4.21-13
 - fixed further update issues from RHEL-6 to RHEL-7 (RHBZ#1043901)

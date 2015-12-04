@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # iptables	Start iptables firewall
 #
@@ -31,7 +31,10 @@ PROC_IPTABLES_NAMES=/proc/net/${IPV}_tables_names
 VAR_SUBSYS_IPTABLES=/var/lock/subsys/$IPTABLES
 
 # only usable for root
-[ $EUID = 0 ] || exit 4
+if [ $EUID != 0 ]; then
+    echo -n $"${IPTABLES}: Only usable by root."; warning; echo
+    exit 4
+fi
 
 if [ ! -x /sbin/$IPTABLES ]; then
     echo -n $"${IPTABLES}: /sbin/$IPTABLES does not exist."; warning; echo
@@ -195,7 +198,10 @@ load_sysctl() {
 
 start() {
     # Do not start if there is no config file.
-    [ ! -f "$IPTABLES_DATA" ] && return 6
+    if [ ! -f "$IPTABLES_DATA" ]; then
+	echo -n $"${IPTABLES}: No config file."; warning; echo
+	return 6
+    fi
 
     # check if ipv6 module load is deactivated
     if [ "${_IPV}" = "ipv6" ] \
@@ -280,10 +286,16 @@ stop() {
 
 save() {
     # Check if iptable module is loaded
-    [ ! -e "$PROC_IPTABLES_NAMES" ] && return 0
+    if [ ! -e "$PROC_IPTABLES_NAMES" ]; then
+	echo -n $"${IPTABLES}: Nothing to save."; warning; echo
+	return 0
+    fi
 
     # Check if firewall is configured (has tables)
-    [ -z "$NF_TABLES" ] && return 6
+    if [ -z "$NF_TABLES" ]; then
+	echo -n $"${IPTABLES}: Nothing to save."; warning; echo
+	return 6
+    fi
 
     echo -n $"${IPTABLES}: Saving firewall rules to $IPTABLES_DATA: "
 
@@ -353,7 +365,10 @@ status() {
 
 reload() {
     # Do not reload if there is no config file.
-    [ ! -f "$IPTABLES_DATA" ] && return 6
+    if [ ! -f "$IPTABLES_DATA" ]; then
+	echo -n $"${IPTABLES}: No config file."; warning; echo
+	return 6
+    fi
 
     # check if ipv6 module load is deactivated
     if [ "${_IPV}" = "ipv6" ] \

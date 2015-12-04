@@ -1,0 +1,88 @@
+From aa562a660d1555b13cffbac1e744033e91f82707 Mon Sep 17 00:00:00 2001
+From: Pablo Neira Ayuso <pablo@netfilter.org>
+Date: Fri, 16 Jan 2015 14:21:57 +0100
+Subject: iptables: use flock() instead of abstract unix sockets
+
+Abstract unix sockets cannot be used to synchronize several concurrent
+instances of iptables since an unpriviledged process can create them and
+prevent the legitimate iptables instance from running.
+
+Use flock() and /run instead as suggested by Lennart Poettering.
+
+Fixes: 93587a0 ("ip[6]tables: Add locking to prevent concurrent instances")
+Reported-by: Lennart Poettering <lennart@poettering.net>
+Cc: Phil Oester <kernel@linuxace.com>
+Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff --git a/iptables/xshared.c b/iptables/xshared.c
+index b18022e..7beb86b 100644
+--- a/iptables/xshared.c
++++ b/iptables/xshared.c
+@@ -9,11 +9,11 @@
+ #include <sys/socket.h>
+ #include <sys/un.h>
+ #include <unistd.h>
++#include <fcntl.h>
+ #include <xtables.h>
+ #include "xshared.h"
+ 
+-#define XT_SOCKET_NAME "xtables"
+-#define XT_SOCKET_LEN 8
++#define XT_LOCK_NAME	"/run/xtables.lock"
+ 
+ /*
+  * Print out any special helps. A user might like to be able to add a --help
+@@ -245,22 +245,14 @@ void xs_init_match(struct xtables_match *match)
+ 
+ bool xtables_lock(int wait)
+ {
+-	int i = 0, ret, xt_socket;
+-	struct sockaddr_un xt_addr;
+-	int waited = 0;
+-
+-	memset(&xt_addr, 0, sizeof(xt_addr));
+-	xt_addr.sun_family = AF_UNIX;
+-	strcpy(xt_addr.sun_path+1, XT_SOCKET_NAME);
+-	xt_socket = socket(AF_UNIX, SOCK_STREAM, 0);
+-	/* If we can't even create a socket, fall back to prior (lockless) behavior */
+-	if (xt_socket < 0)
++	int fd, waited = 0, i = 0;
++
++	fd = open(XT_LOCK_NAME, O_CREAT, 0600);
++	if (fd < 0)
+ 		return true;
+ 
+ 	while (1) {
+-		ret = bind(xt_socket, (struct sockaddr*)&xt_addr,
+-			   offsetof(struct sockaddr_un, sun_path)+XT_SOCKET_LEN);
+-		if (ret == 0)
++		if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+ 			return true;
+ 		else if (wait >= 0 && waited >= wait)
+ 			return false;
+-- 
+cgit v0.10.2
+
+commit 6dc53c514f1e4683e51a877b3a2f3128cfccef28
+Author: Pablo Neira Ayuso <pablo@netfilter.org>
+Date:   Mon Feb 16 16:57:39 2015 +0100
+
+    xshared: calm down compilation warning
+    
+    xshared.c: In function ‘xtables_lock’:
+    xshared.c:255:3: warning: implicit declaration of function ‘flock’ [-Wimplicit-function-declaration]
+    
+    Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff --git a/iptables/xshared.c b/iptables/xshared.c
+index 7beb86b..81c2581 100644
+--- a/iptables/xshared.c
++++ b/iptables/xshared.c
+@@ -6,6 +6,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/file.h>
+ #include <sys/socket.h>
+ #include <sys/un.h>
+ #include <unistd.h>
