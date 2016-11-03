@@ -7,7 +7,7 @@
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.21
-Release: 16%{?dist}
+Release: 17%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
@@ -20,6 +20,8 @@ Patch1: iptables-1.4.21-rhbz_1054871.patch
 Patch2: iptables-1.4.21-libxt_cgroup.patch
 Patch3: iptables-1.4.21-wait_seconds.patch
 Patch4: iptables-1.4.21-flock_wait.patch
+Patch5: iptables-1.4.21-rhbz_1261238.patch
+Patch6: iptables-c513cc3-rhbz_1298879.patch
 Group: System Environment/Base
 URL: http://www.netfilter.org/
 License: GPLv2
@@ -86,6 +88,8 @@ Currently only provides nfnl_osf with the pf.os database.
 %patch2 -p1 -b .libxt_cgroup
 %patch3 -p1 -b .wait_seconds
 %patch4 -p1 -b .flock_wait
+%patch5 -p1 -b .rhbz_1261238
+%patch6 -p1 -b .rhbz_1298879
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing " \
@@ -239,8 +243,16 @@ done
 
 
 %changelog
+* Fri Jul  1 2016 Thomas Woerner <twoerner@redhat.com> 1.4.21-17
+- Fixed init script not to fail on missing restorecon (RHBZ#1246380)
+- Adapted man page snipplet for TRACE to use proper logging backend names
+  (RHBZ#1261238)
+- Warn about use of DROP in nat table (RHBZ#1298879)
+- Fixed modules unload in init script (RHBZ#1324102)
+
 * Fri Sep 18 2015 Thomas Woerner <twoerner@redhat.com> 1.4.21-16
-- Fix important coverity findings: missing include for flock and use bash for init script
+- Fix important coverity findings: missing include for flock and use bash for
+  init script (RHBZ#1264399)
 
 * Fri Sep 18 2015 Thomas Woerner <twoerner@redhat.com> 1.4.21-15
 - Use systemd AssertPathExists for /etc/sysconfig/iptables (RHBZ#1200415)

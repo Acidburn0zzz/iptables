@@ -29,6 +29,8 @@ IPV=${IPTABLES%tables} # ip for ipv4 | ip6 for ipv6
 [ "$IPV" = "ip" ] && _IPV="ipv4" || _IPV="ipv6"
 PROC_IPTABLES_NAMES=/proc/net/${IPV}_tables_names
 VAR_SUBSYS_IPTABLES=/var/lock/subsys/$IPTABLES
+RESTORECON=/bin/restorecon
+[ ! -x "$RESTORECON" ] && RESTORECON=/bin/true
 
 # only usable for root
 if [ $EUID != 0 ]; then
@@ -42,7 +44,7 @@ if [ ! -x /sbin/$IPTABLES ]; then
 fi
 
 # Old or new modutils
-/sbin/modprobe --version 2>&1 | grep -q module-init-tools \
+/sbin/modprobe --version 2>&1 | grep -q 'kmod version' \
     && NEW_MODUTILS=1 \
     || NEW_MODUTILS=0
 
@@ -312,13 +314,13 @@ save() {
 	if [ -e $IPTABLES_DATA ]; then
 	    cp -f $IPTABLES_DATA $IPTABLES_DATA.save \
 		&& chmod 600 $IPTABLES_DATA.save \
-		&& restorecon $IPTABLES_DATA.save \
+		&& $RESTORECON $IPTABLES_DATA.save \
 		|| ret=1
 	fi
 	if [ $ret -eq 0 ]; then
 	    mv -f $TMP_FILE $IPTABLES_DATA \
 		&& chmod 600 $IPTABLES_DATA \
-		&& restorecon $IPTABLES_DATA \
+		&& $RESTORECON $IPTABLES_DATA \
 	        || ret=1
 	fi
     fi
