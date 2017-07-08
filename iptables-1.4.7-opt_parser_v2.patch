@@ -1,0 +1,85 @@
+Based on upstream commits (but without ABI breakage):
+
+commit 600f38db82548a683775fd89b6e136673e924097
+Author: Jan Engelhardt <jengelh@medozas.de>
+Date:   Fri Oct 29 18:57:42 2010 +0200
+
+    libxtables: change option precedence order to be intuitive
+    
+    When using `-m mark --mark 2 -m connmark --mark 2`, the user currently
+    gets an error about the (libxt_mark) --mark option being used twice.
+    This is because libxt_connmark's option table does not override any
+    previous options. This patch changes this behavior, since the current
+    behavior does not allow connmark's option to be used at all, which is
+    illogical.
+    
+    Cc: Florian Westphal <fw@strlen.de>
+    Signed-off-by: Jan Engelhardt <jengelh@medozas.de>
+    Signed-off-by: Patrick McHardy <kaber@trash.net>
+
+commit fa503ad59f73d20d85f4cdf53324a01d2ad8591e
+Author: Jan Engelhardt <jengelh@medozas.de>
+Date:   Sat Jan 8 02:47:02 2011 +0100
+
+    ip[6]tables: only call target's parse function when option char is in range
+    
+    Same as previous commit. Doing this actually allows to remove code
+    that is no longer needed.
+    
+    Signed-off-by: Jan Engelhardt <jengelh@medozas.de>
+
+
+diff -up iptables-1.4.7/xtables.c.opts iptables-1.4.7/xtables.c
+--- iptables-1.4.7/xtables.c.opts	2012-02-03 17:01:26.531907041 +0100
++++ iptables-1.4.7/xtables.c	2012-02-03 17:02:08.704228169 +0100
+@@ -88,29 +88,37 @@ struct option *xtables_merge_options(str
+ 				     const struct option *newopts,
+ 				     unsigned int *option_offset)
+ {
+-	unsigned int num_old, num_new, i;
+-	struct option *merge;
++	unsigned int num_old = 0, num_new = 0, i;
++	struct option *merge, *mp;
+ 
+ 	if (newopts == NULL)
+ 		return oldopts;
+ 
+-	for (num_old = 0; oldopts[num_old].name; num_old++) ;
++	if (oldopts != NULL)
++		for (num_old = 0; oldopts[num_old].name; num_old++) ;
+ 	for (num_new = 0; newopts[num_new].name; num_new++) ;
+ 
++	merge = malloc(sizeof(*mp) * (num_old + num_new + 1));
++	if (merge == NULL)
++		return NULL;
++
++	mp = merge;
++
++	/* First, the new options */
+ 	xt_params->option_offset += 256;
+ 	*option_offset = xt_params->option_offset;
++	memcpy(mp, newopts, sizeof(*mp) * num_new);
+ 
+-	merge = malloc(sizeof(struct option) * (num_new + num_old + 1));
+-	if (merge == NULL)
+-		return NULL;
+-	memcpy(merge, oldopts, num_old * sizeof(struct option));
+-	xtables_free_opts(0);	/* Release any old options merged  */
+-	for (i = 0; i < num_new; i++) {
+-		merge[num_old + i] = newopts[i];
+-		merge[num_old + i].val += *option_offset;
+-	}
+-	memset(merge + num_old + num_new, 0, sizeof(struct option));
++	for (i = 0; i < num_new; ++i, ++mp)
++		mp->val += *option_offset;
++
++	/* Second, the old options */
++	memcpy(mp, oldopts, sizeof(*mp) * num_old);
++	mp += num_old;
++	xtables_free_opts(0);
+ 
++	/* Clear trailing entry */
++	memset(mp, 0, sizeof(*mp));
+ 	return merge;
+ }
+ 

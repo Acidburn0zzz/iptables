@@ -1,0 +1,90 @@
+diff -up iptables-1.4.7/ip6tables.c.chain_maxnamelen iptables-1.4.7/ip6tables.c
+--- iptables-1.4.7/ip6tables.c.chain_maxnamelen	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/ip6tables.c	2012-09-17 15:28:52.478025549 +0200
+@@ -456,10 +456,10 @@ parse_target(const char *targetname)
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "Invalid target name (too short)");
+ 
+-	if (strlen(targetname)+1 > sizeof(ip6t_chainlabel))
++	if (strlen(targetname) > XT_FUNCTION_MAXNAMELEN - 2)
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "Invalid target name `%s' (%u chars max)",
+-			   targetname, (unsigned int)sizeof(ip6t_chainlabel)-1);
++			   targetname, XT_FUNCTION_MAXNAMELEN - 2);
+ 
+ 	for (ptr = targetname; *ptr; ptr++)
+ 		if (isspace(*ptr))
+@@ -1840,10 +1840,10 @@ int do_command6(int argc, char *argv[], 
+ 
+ 	generic_opt_check(command, options);
+ 
+-	if (chain && strlen(chain) > IP6T_FUNCTION_MAXNAMELEN)
++	if (chain && strlen(chain) >= XT_FUNCTION_MAXNAMELEN - 1)
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "chain name `%s' too long (must be under %i chars)",
+-			   chain, IP6T_FUNCTION_MAXNAMELEN);
++			   chain, XT_FUNCTION_MAXNAMELEN - 1);
+ 
+ 	/* only allocate handle if we weren't called with a handle */
+ 	if (!*handle)
+diff -up iptables-1.4.7/ip6tables-restore.c.chain_maxnamelen iptables-1.4.7/ip6tables-restore.c
+--- iptables-1.4.7/ip6tables-restore.c.chain_maxnamelen	2012-09-17 15:28:52.446025598 +0200
++++ iptables-1.4.7/ip6tables-restore.c	2012-09-17 15:28:52.479024832 +0200
+@@ -253,6 +253,12 @@ int main(int argc, char *argv[])
+ 				exit(1);
+ 			}
+ 
++			if (strlen(chain) > XT_FUNCTION_MAXNAMELEN - 2)
++                                xtables_error(PARAMETER_PROBLEM,
++					      "Invalid chain name `%s' "
++					      "(%u chars max)",
++					      chain, XT_FUNCTION_MAXNAMELEN-2);
++
+ 			if (ip6tc_builtin(chain, handle) <= 0) {
+ 				if (noflush && ip6tc_is_chain(chain, handle)) {
+ 					DEBUGP("Flushing existing user defined chain '%s'\n", chain);
+diff -up iptables-1.4.7/iptables.c.chain_maxnamelen iptables-1.4.7/iptables.c
+--- iptables-1.4.7/iptables.c.chain_maxnamelen	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/iptables.c	2012-09-17 15:28:52.480024675 +0200
+@@ -460,10 +460,10 @@ parse_target(const char *targetname)
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "Invalid target name (too short)");
+ 
+-	if (strlen(targetname)+1 > sizeof(ipt_chainlabel))
++	if (strlen(targetname) > XT_FUNCTION_MAXNAMELEN - 2)
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "Invalid target name `%s' (%u chars max)",
+-			   targetname, (unsigned int)sizeof(ipt_chainlabel)-1);
++			   targetname, XT_FUNCTION_MAXNAMELEN - 2);
+ 
+ 	for (ptr = targetname; *ptr; ptr++)
+ 		if (isspace(*ptr))
+@@ -1878,10 +1878,10 @@ int do_command(int argc, char *argv[], c
+ 
+ 	generic_opt_check(command, options);
+ 
+-	if (chain && strlen(chain) > IPT_FUNCTION_MAXNAMELEN)
++	if (chain && strlen(chain) >= XT_FUNCTION_MAXNAMELEN - 1)
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "chain name `%s' too long (must be under %i chars)",
+-			   chain, IPT_FUNCTION_MAXNAMELEN);
++			   chain, XT_FUNCTION_MAXNAMELEN - 1);
+ 
+ 	/* only allocate handle if we weren't called with a handle */
+ 	if (!*handle)
+diff -up iptables-1.4.7/iptables-restore.c.chain_maxnamelen iptables-1.4.7/iptables-restore.c
+--- iptables-1.4.7/iptables-restore.c.chain_maxnamelen	2012-09-17 15:28:52.447025439 +0200
++++ iptables-1.4.7/iptables-restore.c	2012-09-17 15:28:52.481025355 +0200
+@@ -259,6 +259,12 @@ main(int argc, char *argv[])
+ 				exit(1);
+ 			}
+ 
++			if (strlen(chain) > XT_FUNCTION_MAXNAMELEN - 2)
++                                xtables_error(PARAMETER_PROBLEM,
++					      "Invalid chain name `%s' "
++					      "(%u chars max)",
++					      chain, XT_FUNCTION_MAXNAMELEN-2);
++
+ 			if (iptc_builtin(chain, handle) <= 0) {
+ 				if (noflush && iptc_is_chain(chain, handle)) {
+ 					DEBUGP("Flushing existing user defined chain '%s'\n", chain);

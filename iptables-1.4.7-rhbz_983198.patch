@@ -1,0 +1,48 @@
+diff -up iptables-1.4.7/ip6tables-save.8.rhbz_983198 iptables-1.4.7/ip6tables-save.8
+--- iptables-1.4.7/ip6tables-save.8.rhbz_983198	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/ip6tables-save.8	2013-08-14 15:51:57.000000000 +0200
+@@ -29,7 +29,7 @@ ip6tables-save \(em dump iptables rules 
+ is used to dump the contents of an IPv6 Table in easily parseable format
+ to STDOUT. Use I/O-redirection provided by your shell to write to a file.
+ .TP
+-\fB\-M\fP \fImodprobe_program\fP
++\fB\-M\fR, \fB\-\-modprobe\fP \fImodprobe_program\fP
+ Specify the path to the modprobe program. By default, iptables-save will
+ inspect /proc/sys/kernel/modprobe to determine the executable's path.
+ .TP
+diff -up iptables-1.4.7/ip6tables-save.c.rhbz_983198 iptables-1.4.7/ip6tables-save.c
+--- iptables-1.4.7/ip6tables-save.c.rhbz_983198	2013-08-14 15:00:20.000000000 +0200
++++ iptables-1.4.7/ip6tables-save.c	2013-08-14 15:46:44.000000000 +0200
+@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
+ 	init_extensions();
+ #endif
+ 
+-	while ((c = getopt_long(argc, argv, "bcdt:", options, NULL)) != -1) {
++	while ((c = getopt_long(argc, argv, "bcdt:M:", options, NULL)) != -1) {
+ 		switch (c) {
+ 		case 'b':
+ 			show_binary = 1;
+diff -up iptables-1.4.7/iptables-save.8.rhbz_983198 iptables-1.4.7/iptables-save.8
+--- iptables-1.4.7/iptables-save.8.rhbz_983198	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/iptables-save.8	2013-08-14 15:50:26.000000000 +0200
+@@ -29,7 +29,7 @@ iptables-save \(em dump iptables rules t
+ is used to dump the contents of an IP Table in easily parseable format
+ to STDOUT. Use I/O-redirection provided by your shell to write to a file.
+ .TP
+-\fB\-M\fP \fImodprobe_program\fP
++\fB\-M\fR, \fB\-\-modprobe\fP \fImodprobe_program\fP
+ Specify the path to the modprobe program. By default, iptables-save will
+ inspect /proc/sys/kernel/modprobe to determine the executable's path.
+ .TP
+diff -up iptables-1.4.7/iptables-save.c.rhbz_983198 iptables-1.4.7/iptables-save.c
+--- iptables-1.4.7/iptables-save.c.rhbz_983198	2013-08-14 15:00:20.000000000 +0200
++++ iptables-1.4.7/iptables-save.c	2013-08-14 15:46:30.000000000 +0200
+@@ -152,7 +152,7 @@ main(int argc, char *argv[])
+ 	init_extensions();
+ #endif
+ 
+-	while ((c = getopt_long(argc, argv, "bcdt:", options, NULL)) != -1) {
++	while ((c = getopt_long(argc, argv, "bcdt:M:", options, NULL)) != -1) {
+ 		switch (c) {
+ 		case 'b':
+ 			show_binary = 1;

@@ -1,0 +1,157 @@
+diff -dur iptables-1.4.7/extensions/libxt_NFQUEUE.c iptables-1.4.7_/extensions/libxt_NFQUEUE.c
+--- iptables-1.4.7/extensions/libxt_NFQUEUE.c	2010-03-01 17:11:28.000000000 +0300
++++ iptables-1.4.7_/extensions/libxt_NFQUEUE.c	2012-07-23 19:08:15.187576124 +0400
+@@ -30,9 +30,17 @@
+ "  --queue-balance first:last	Balance flows between queues <value> to <value>.\n");
+ }
+ 
++static void NFQUEUE_help_v2(void)
++{
++	NFQUEUE_help_v1();
++	printf(
++"  --queue-bypass		Bypass Queueing if no queue instance exists.\n");
++}
++
+ static const struct option NFQUEUE_opts[] = {
+ 	{ "queue-num", 1, NULL, 'F' },
+ 	{ "queue-balance", 1, NULL, 'B' },
++	{ "queue-bypass", 0, NULL, 'P'},
+ 	{ .name = NULL }
+ };
+ 
+@@ -120,6 +128,18 @@
+ 	return 1;
+ }
+ 
++static int
++NFQUEUE_parse_v2(int c, char **argv, int invert, unsigned int *flags,
++                 const void *entry, struct xt_entry_target **target)
++{
++	if (c == 'P') {
++		struct xt_NFQ_info_v2 *info = (void *)(*target)->data;
++		info->bypass = 1;
++		return 1;
++	}
++	return NFQUEUE_parse_v1(c, argv, invert, flags, entry, target);
++}
++
+ static void NFQUEUE_print(const void *ip,
+                           const struct xt_entry_target *target, int numeric)
+ {
+@@ -142,6 +162,16 @@
+ 	}
+ }
+ 
++static void NFQUEUE_print_v2(const void *ip,
++                             const struct xt_entry_target *target, int numeric)
++{
++	const struct xt_NFQ_info_v2 *info = (void *) target->data;
++
++	NFQUEUE_print_v1(ip, target, numeric);
++	if (info->bypass)
++		printf(" bypass");
++}
++
+ static void NFQUEUE_save(const void *ip, const struct xt_entry_target *target)
+ {
+ 	const struct xt_NFQ_info *tinfo =
+@@ -163,13 +193,24 @@
+ 	}
+ }
+ 
++static void NFQUEUE_save_v2(const void *ip, const struct xt_entry_target *target)
++{
++	const struct xt_NFQ_info_v2 *info = (void *) target->data;
++
++	NFQUEUE_save_v1(ip, target);
++
++	if (info->bypass)
++		printf("--queue-bypass ");
++}
++
+ static void NFQUEUE_init_v1(struct xt_entry_target *t)
+ {
+ 	struct xt_NFQ_info_v1 *tinfo = (void *)t->data;
+ 	tinfo->queues_total = 1;
+ }
+ 
+-static struct xtables_target nfqueue_target = {
++static struct xtables_target nfqueue_targets[] = {
++{
+ 	.family		= NFPROTO_UNSPEC,
+ 	.name		= "NFQUEUE",
+ 	.version	= XTABLES_VERSION,
+@@ -180,9 +221,7 @@
+ 	.print		= NFQUEUE_print,
+ 	.save		= NFQUEUE_save,
+ 	.extra_opts	= NFQUEUE_opts
+-};
+-
+-static struct xtables_target nfqueue_target_v1 = {
++},{
+ 	.family		= NFPROTO_UNSPEC,
+ 	.revision	= 1,
+ 	.name		= "NFQUEUE",
+@@ -195,10 +234,23 @@
+ 	.print		= NFQUEUE_print_v1,
+ 	.save		= NFQUEUE_save_v1,
+ 	.extra_opts	= NFQUEUE_opts,
++},{
++	.family		= NFPROTO_UNSPEC,
++	.revision	= 2,
++	.name		= "NFQUEUE",
++	.version	= XTABLES_VERSION,
++	.size		= XT_ALIGN(sizeof(struct xt_NFQ_info_v2)),
++	.userspacesize	= XT_ALIGN(sizeof(struct xt_NFQ_info_v2)),
++	.help		= NFQUEUE_help_v2,
++	.init		= NFQUEUE_init_v1,
++	.parse		= NFQUEUE_parse_v2,
++	.print		= NFQUEUE_print_v2,
++	.save		= NFQUEUE_save_v2,
++	.extra_opts	= NFQUEUE_opts,
++}
+ };
+ 
+ void _init(void)
+ {
+-	xtables_register_target(&nfqueue_target);
+-	xtables_register_target(&nfqueue_target_v1);
++	xtables_register_targets(nfqueue_targets, ARRAY_SIZE(nfqueue_targets));
+ }
+diff -dur iptables-1.4.7/extensions/libxt_NFQUEUE.man iptables-1.4.7_/extensions/libxt_NFQUEUE.man
+--- iptables-1.4.7/extensions/libxt_NFQUEUE.man	2010-03-01 17:11:28.000000000 +0300
++++ iptables-1.4.7_/extensions/libxt_NFQUEUE.man	2012-07-23 19:10:05.404455242 +0400
+@@ -5,7 +5,8 @@
+ the
+ .B
+ nfnetlink_queue
+-kernel support. The \fBqueue-balance\fP option was added in Linux 2.6.31.
++kernel support. The \fBqueue-balance\fP option was added in Linux 2.6.31,
++\fBqueue-bypass\fP in 2.6.39.
+ .TP
+ \fB\-\-queue\-num\fP \fIvalue\fP
+ This specifies the QUEUE number to use. Valid queue numbers are 0 to 65535. The default value is 0.
+@@ -16,3 +17,9 @@
+ This is useful for multicore systems: start multiple instances of the userspace program on
+ queues x, x+1, .. x+n and use "\-\-queue\-balance \fIx\fP\fB:\fP\fIx+n\fP".
+ Packets belonging to the same connection are put into the same nfqueue.
++.PP
++.TP
++\fB\-\-queue\-bypass\fP
++By default, if no userspace program is listening on an NFQUEUE, then all packets that are to be queued
++are dropped.  When this option is used, the NFQUEUE rule is silently bypassed instead. The packet
++will move on to the next rule.
+diff -dur iptables-1.4.7/include/linux/netfilter/xt_NFQUEUE.h iptables-1.4.7_/include/linux/netfilter/xt_NFQUEUE.h
+--- iptables-1.4.7/include/linux/netfilter/xt_NFQUEUE.h	2010-03-01 17:11:28.000000000 +0300
++++ iptables-1.4.7_/include/linux/netfilter/xt_NFQUEUE.h	2012-07-23 19:08:57.574203436 +0400
+@@ -20,4 +20,10 @@
+ 	__u16 queues_total;
+ };
+ 
++struct xt_NFQ_info_v2 {
++	__u16 queuenum;
++	__u16 queues_total;
++	__u16 bypass;
++};
++
+ #endif /* _XT_NFQ_TARGET_H */

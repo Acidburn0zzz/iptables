@@ -1,0 +1,159 @@
+--- a/extensions/libxt_AUDIT.c	
++++ a/extensions/libxt_AUDIT.c	
+@@ -0,0 +1,123 @@ 
++/* Shared library add-on to xtables for AUDIT
++ *
++ * (C) 2010-2011, Thomas Graf <tgraf@redhat.com>
++ * (C) 2010-2011, Red Hat, Inc.
++ *
++ * This program is distributed under the terms of GNU GPL v2, 1991
++ */
++
++#include <stdbool.h>
++#include <stdio.h>
++#include <string.h>
++#include <stdlib.h>
++#include <getopt.h>
++
++#include <xtables.h>
++#include <linux/netfilter/xt_AUDIT.h>
++
++static void AUDIT_help(void)
++{
++	printf(
++"AUDIT target options\n"
++"  --type TYPE		Action type to be recorded.\n");
++}
++
++static const struct option AUDIT_opts[] = {
++	{.name = "type", .has_arg = true, .val = 't'},
++	{NULL},
++};
++
++static int AUDIT_parse(int c, char **argv, int invert, unsigned int *flags,
++                     const void *entry, struct xt_entry_target **target)
++{
++	struct xt_AUDIT_info *einfo
++		= (struct xt_AUDIT_info *)(*target)->data;
++
++	switch (c) {
++	case 't':
++		if (!strcasecmp(optarg, "accept"))
++			einfo->type = XT_AUDIT_TYPE_ACCEPT;
++		else if (!strcasecmp(optarg, "drop"))
++			einfo->type = XT_AUDIT_TYPE_DROP;
++		else if (!strcasecmp(optarg, "reject"))
++			einfo->type = XT_AUDIT_TYPE_REJECT;
++		else
++			xtables_error(PARAMETER_PROBLEM,
++				   "Bad action type value `%s'", optarg);
++
++		if (*flags)
++			xtables_error(PARAMETER_PROBLEM,
++			           "AUDIT: Can't specify --type twice");
++		*flags = 1;
++		break;
++	default:
++		return 0;
++	}
++
++	return 1;
++}
++
++static void AUDIT_final_check(unsigned int flags)
++{
++	if (!flags)
++		xtables_error(PARAMETER_PROBLEM,
++		           "AUDIT target: Parameter --type is required");
++}
++
++static void AUDIT_print(const void *ip, const struct xt_entry_target *target,
++                      int numeric)
++{
++	const struct xt_AUDIT_info *einfo =
++		(const struct xt_AUDIT_info *)target->data;
++
++	printf("AUDIT ");
++
++	switch(einfo->type) {
++	case XT_AUDIT_TYPE_ACCEPT:
++		printf("accept");
++		break;
++	case XT_AUDIT_TYPE_DROP:
++		printf("drop");
++		break;
++	case XT_AUDIT_TYPE_REJECT:
++		printf("reject");
++		break;
++	}
++}
++
++static void AUDIT_save(const void *ip, const struct xt_entry_target *target)
++{
++	const struct xt_AUDIT_info *einfo =
++		(const struct xt_AUDIT_info *)target->data;
++
++	switch(einfo->type) {
++	case XT_AUDIT_TYPE_ACCEPT:
++		printf("--type=accept");
++		break;
++	case XT_AUDIT_TYPE_DROP:
++		printf("--type=drop");
++		break;
++	case XT_AUDIT_TYPE_REJECT:
++		printf("--type=reject");
++		break;
++	}
++}
++
++static struct xtables_target audit_tg_reg = {
++	.name		= "AUDIT",
++	.version	= XTABLES_VERSION,
++	.family		= NFPROTO_UNSPEC,
++	.size		= XT_ALIGN(sizeof(struct xt_AUDIT_info)),
++	.userspacesize	= XT_ALIGN(sizeof(struct xt_AUDIT_info)),
++	.help		= AUDIT_help,
++	.parse		= AUDIT_parse,
++	.final_check	= AUDIT_final_check,
++	.print		= AUDIT_print,
++	.save		= AUDIT_save,
++	.extra_opts	= AUDIT_opts,
++};
++
++void _init(void)
++{
++	xtables_register_target(&audit_tg_reg);
++}
+--- a/include/linux/netfilter/xt_AUDIT.h	
++++ a/include/linux/netfilter/xt_AUDIT.h	
+@@ -0,0 +1,30 @@ 
++/*
++ * Header file for iptables xt_AUDIT target
++ *
++ * (C) 2010-2011 Thomas Graf <tgraf@redhat.com>
++ * (C) 2010-2011 Red Hat, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ */
++
++#ifndef _XT_AUDIT_TARGET_H
++#define _XT_AUDIT_TARGET_H
++
++#include <linux/types.h>
++
++enum {
++	XT_AUDIT_TYPE_ACCEPT = 0,
++	XT_AUDIT_TYPE_DROP,
++	XT_AUDIT_TYPE_REJECT,
++	__XT_AUDIT_TYPE_MAX,
++};
++
++#define XT_AUDIT_TYPE_MAX (__XT_AUDIT_TYPE_MAX - 1)
++
++struct xt_AUDIT_info {
++	__u8 type; /* XT_AUDIT_TYPE_* */
++};
++
++#endif /* _XT_AUDIT_TARGET_H */

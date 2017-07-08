@@ -1,0 +1,452 @@
+diff -up iptables-1.4.7/include/libiptc/libip6tc.h.check_option iptables-1.4.7/include/libiptc/libip6tc.h
+--- iptables-1.4.7/include/libiptc/libip6tc.h.check_option	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/include/libiptc/libip6tc.h	2015-03-26 21:53:54.563977125 +0100
+@@ -80,6 +80,12 @@ int ip6tc_append_entry(const ip6t_chainl
+ 		       const struct ip6t_entry *e,
+ 		       struct ip6tc_handle *handle);
+ 
++/* Check whether a matching rule exists */
++int ip6tc_check_entry(const ip6t_chainlabel chain,
++		       const struct ip6t_entry *origfw,
++		       unsigned char *matchmask,
++		       struct ip6tc_handle *handle);
++
+ /* Delete the first rule in `chain' which matches `fw'. */
+ int ip6tc_delete_entry(const ip6t_chainlabel chain,
+ 		       const struct ip6t_entry *origfw,
+diff -up iptables-1.4.7/include/libiptc/libiptc.h.check_option iptables-1.4.7/include/libiptc/libiptc.h
+--- iptables-1.4.7/include/libiptc/libiptc.h.check_option	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/include/libiptc/libiptc.h	2015-03-26 21:53:54.563977125 +0100
+@@ -88,6 +88,12 @@ int iptc_append_entry(const ipt_chainlab
+ 		      const struct ipt_entry *e,
+ 		      struct iptc_handle *handle);
+ 
++/* Check whether a mathching rule exists */
++int iptc_check_entry(const ipt_chainlabel chain,
++		      const struct ipt_entry *origfw,
++		      unsigned char *matchmask,
++		      struct iptc_handle *handle);
++
+ /* Delete the first rule in `chain' which matches `e', subject to
+    matchmask (array of length == origfw) */
+ int iptc_delete_entry(const ipt_chainlabel chain,
+diff -up iptables-1.4.7/ip6tables.8.in.check_option iptables-1.4.7/ip6tables.8.in
+--- iptables-1.4.7/ip6tables.8.in.check_option	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/ip6tables.8.in	2015-03-26 21:53:54.564977139 +0100
+@@ -27,8 +27,8 @@
+ .SH NAME
+ ip6tables \(em IPv6 packet filter administration
+ .SH SYNOPSIS
+-\fBip6tables\fP [\fB\-t\fP \fItable\fP] {\fB\-A\fP|\fB\-D\fP} \fIchain
+-rule-specification\fP [\fIoptions...\fP]
++\fBip6tables\fP [\fB\-t\fP \fItable\fP] {\fB\-A\fP|\fB\-C\fP|\fB\-D\fP}
++\fIchain rule-specification\fP [\fIoptions...\fP]
+ .PP
+ \fBip6tables\fP [\fB\-t\fP \fItable\fP] \fB\-I\fP \fIchain\fP [\fIrulenum\fP]
+ \fIrule-specification\fP [\fIoptions...\fP]
+@@ -139,6 +139,12 @@ Append one or more rules to the end of t
+ When the source and/or destination names resolve to more than one
+ address, a rule will be added for each possible address combination.
+ .TP
++\fB\-C\fP, \fB\-\-check\fP \fIchain rule-specification\fP
++Check whether a rule matching the specification does exist in the
++selected chain. This command uses the same logic as \fB\-D\fP to
++find a matching entry, but does not alter the existing iptables
++configuration and uses its exit code to indicate success or failure.
++.TP
+ \fB\-D\fP, \fB\-\-delete\fP \fIchain rule-specification\fP
+ .ns
+ .TP
+diff -up iptables-1.4.7/ip6tables.c.check_option iptables-1.4.7/ip6tables.c
+--- iptables-1.4.7/ip6tables.c.check_option	2015-03-26 21:53:54.549976925 +0100
++++ iptables-1.4.7/ip6tables.c	2015-03-26 21:53:54.564977139 +0100
+@@ -82,9 +82,10 @@
+ #define CMD_RENAME_CHAIN	0x0800U
+ #define CMD_LIST_RULES		0x1000U
+ #define CMD_ZERO_NUM		0x2000U
+-#define NUMBER_OF_CMD	15
++#define CMD_CHECK		0x4000U
++#define NUMBER_OF_CMD	16
+ static const char cmdflags[] = { 'I', 'D', 'D', 'R', 'A', 'L', 'F', 'Z',
+-				 'Z', 'N', 'X', 'P', 'E', 'S' };
++				 'Z', 'N', 'X', 'P', 'E', 'S', 'C' };
+ 
+ #define OPT_NONE	0x00000U
+ #define OPT_NUMERIC	0x00001U
+@@ -105,6 +106,7 @@ static const char optflags[NUMBER_OF_OPT
+ static struct option original_opts[] = {
+ 	{.name = "append",        .has_arg = 1, .val = 'A'},
+ 	{.name = "delete",        .has_arg = 1, .val = 'D'},
++	{.name = "check" ,        .has_arg = 1, .val = 'C'},
+ 	{.name = "insert",        .has_arg = 1, .val = 'I'},
+ 	{.name = "replace",       .has_arg = 1, .val = 'R'},
+ 	{.name = "list",          .has_arg = 2, .val = 'L'},
+@@ -178,7 +180,8 @@ static char commands_v_options[NUMBER_OF
+ /*DEL_CHAIN*/ {'x','x','x','x','x',' ','x','x','x','x','x'},
+ /*SET_POLICY*/{'x','x','x','x','x',' ','x','x','x','x',' '},
+ /*RENAME*/    {'x','x','x','x','x',' ','x','x','x','x','x'},
+-/*LIST_RULES*/{'x','x','x','x','x',' ','x','x','x','x','x'}
++/*LIST_RULES*/{'x','x','x','x','x',' ','x','x','x','x','x'},
++/*CHECK*/     {'x',' ',' ',' ',' ',' ','x',' ',' ','x','x'},
+ };
+ 
+ static int inverse_for_options[NUMBER_OF_OPT] =
+@@ -239,7 +242,7 @@ static void
+ exit_printhelp(struct xtables_rule_match *matches)
+ {
+ 	printf("%s v%s\n\n"
+-"Usage: %s -[AD] chain rule-specification [options]\n"
++"Usage: %s -[ACD] chain rule-specification [options]\n"
+ "       %s -I chain [rulenum] rule-specification [options]\n"
+ "       %s -R chain rulenum rule-specification [options]\n"
+ "       %s -D chain rulenum [options]\n"
+@@ -257,6 +260,7 @@ exit_printhelp(struct xtables_rule_match
+ "Commands:\n"
+ "Either long or short options are allowed.\n"
+ "  --append  -A chain		Append to chain\n"
++"  --check   -C chain		Check for the existence of a rule\n"
+ "  --delete  -D chain		Delete matching rule from chain\n"
+ "  --delete  -D chain rulenum\n"
+ "				Delete rule rulenum (1 = first) from chain\n"
+@@ -873,6 +877,36 @@ delete_entry(const ip6t_chainlabel chain
+ 	return ret;
+ }
+ 
++static int
++check_entry(const ip6t_chainlabel chain, struct ip6t_entry *fw,
++	    unsigned int nsaddrs, const struct in6_addr *saddrs,
++	    const struct in6_addr *smasks, unsigned int ndaddrs,
++	    const struct in6_addr *daddrs, const struct in6_addr *dmasks,
++	    bool verbose, struct ip6tc_handle *handle,
++	    struct xtables_rule_match *matches,
++	    const struct xtables_target *target)
++{
++	unsigned int i, j;
++	int ret = 1;
++	unsigned char *mask;
++
++	mask = make_delete_mask(matches, target);
++	for (i = 0; i < nsaddrs; i++) {
++		fw->ipv6.src = saddrs[i];
++		fw->ipv6.smsk = smasks[i];
++		for (j = 0; j < ndaddrs; j++) {
++			fw->ipv6.dst = daddrs[j];
++			fw->ipv6.dmsk = dmasks[j];
++			if (verbose)
++				print_firewall_line(fw, handle);
++			ret &= ip6tc_check_entry(chain, fw, mask, handle);
++		}
++	}
++
++	free(mask);
++	return ret;
++}
++
+ int
+ for_each_chain(int (*fn)(const ip6t_chainlabel, int, struct ip6tc_handle *),
+ 	       int verbose, int builtinstoo, struct ip6tc_handle *handle)
+@@ -1336,7 +1370,7 @@ int do_command6(int argc, char *argv[],
+ 	opterr = 0;
+ 
+ 	while ((c = getopt_long(argc, argv,
+-	   "-A:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvnt:m:xc:g:",
++	   "-A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvnt:m:xc:g:",
+ 					   opts, NULL)) != -1) {
+ 		switch (c) {
+ 			/*
+@@ -1348,6 +1382,12 @@ int do_command6(int argc, char *argv[],
+ 			chain = optarg;
+ 			break;
+ 
++		case 'C':
++			add_command(&command, CMD_CHECK, CMD_NONE,
++			            invert);
++			chain = optarg;
++			break;
++
+ 		case 'D':
+ 			add_command(&command, CMD_DELETE, CMD_NONE,
+ 				    invert);
+@@ -1814,7 +1854,7 @@ int do_command6(int argc, char *argv[],
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "nothing appropriate following !");
+ 
+-	if (command & (CMD_REPLACE | CMD_INSERT | CMD_DELETE | CMD_APPEND)) {
++	if (command & (CMD_REPLACE | CMD_INSERT | CMD_DELETE | CMD_APPEND | CMD_CHECK)) {
+ 		if (!(options & OPT_DESTINATION))
+ 			dhostnetworkmask = "::0/0";
+ 		if (!(options & OPT_SOURCE))
+@@ -1860,6 +1900,7 @@ int do_command6(int argc, char *argv[],
+ 
+ 	if (command == CMD_APPEND
+ 	    || command == CMD_DELETE
++	    || command == CMD_CHECK
+ 	    || command == CMD_INSERT
+ 	    || command == CMD_REPLACE) {
+ 		if (strcmp(chain, "PREROUTING") == 0
+@@ -1947,6 +1988,13 @@ int do_command6(int argc, char *argv[],
+ 	case CMD_DELETE_NUM:
+ 		ret = ip6tc_delete_num_entry(chain, rulenum - 1, *handle);
+ 		break;
++	case CMD_CHECK:
++		ret = check_entry(chain, e,
++				   nsaddrs, saddrs, smasks,
++				   ndaddrs, daddrs, dmasks,
++				   options&OPT_VERBOSE,
++				   *handle, matches, target);
++		break;
+ 	case CMD_REPLACE:
+ 		ret = replace_entry(chain, e, rulenum - 1,
+ 				    saddrs, smasks, daddrs, dmasks,
+diff -up iptables-1.4.7/iptables.8.in.check_option iptables-1.4.7/iptables.8.in
+--- iptables-1.4.7/iptables.8.in.check_option	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/iptables.8.in	2015-03-26 21:53:54.564977139 +0100
+@@ -25,7 +25,8 @@
+ .SH NAME
+ iptables \(em administration tool for IPv4 packet filtering and NAT
+ .SH SYNOPSIS
+-\fBiptables\fP [\fB\-t\fP \fItable\fP] {\fB\-A\fP|\fB\-D\fP} \fIchain\fP \fIrule-specification\fP
++\fBiptables\fP [\fB\-t\fP \fItable\fP] {\fB\-A\fP|\fB\-C\fP|\fB\-D\fP}
++\fIchain\fP \fIrule-specification\fP
+ .PP
+ \fBiptables\fP [\fB\-t\fP \fItable\fP] \fB\-I\fP \fIchain\fP [\fIrulenum\fP] \fIrule-specification\fP
+ .PP
+@@ -144,6 +145,12 @@ Append one or more rules to the end of t
+ When the source and/or destination names resolve to more than one
+ address, a rule will be added for each possible address combination.
+ .TP
++\fB\-C\fP, \fB\-\-check\fP \fIchain rule-specification\fP
++Check whether a rule matching the specification does exist in the
++selected chain. This command uses the same logic as \fB\-D\fP to
++find a matching entry, but does not alter the existing iptables
++configuration and uses its exit code to indicate success or failure.
++.TP
+ \fB\-D\fP, \fB\-\-delete\fP \fIchain rule-specification\fP
+ .ns
+ .TP
+diff -up iptables-1.4.7/iptables.c.check_option iptables-1.4.7/iptables.c
+--- iptables-1.4.7/iptables.c.check_option	2015-03-26 21:53:54.549976925 +0100
++++ iptables-1.4.7/iptables.c	2015-03-26 21:53:54.565977154 +0100
+@@ -79,9 +79,10 @@
+ #define CMD_RENAME_CHAIN	0x0800U
+ #define CMD_LIST_RULES		0x1000U
+ #define CMD_ZERO_NUM		0x2000U
+-#define NUMBER_OF_CMD	15
++#define CMD_CHECK		0x4000U
++#define NUMBER_OF_CMD	16
+ static const char cmdflags[] = { 'I', 'D', 'D', 'R', 'A', 'L', 'F', 'Z',
+-				 'Z', 'N', 'X', 'P', 'E', 'S' };
++				 'Z', 'N', 'X', 'P', 'E', 'S', 'C' };
+ 
+ #define OPT_NONE	0x00000U
+ #define OPT_NUMERIC	0x00001U
+@@ -103,6 +104,7 @@ static const char optflags[NUMBER_OF_OPT
+ static struct option original_opts[] = {
+ 	{.name = "append",        .has_arg = 1, .val = 'A'},
+ 	{.name = "delete",        .has_arg = 1, .val = 'D'},
++	{.name = "check",         .has_arg = 1, .val = 'C'},
+ 	{.name = "insert",        .has_arg = 1, .val = 'I'},
+ 	{.name = "replace",       .has_arg = 1, .val = 'R'},
+ 	{.name = "list",          .has_arg = 2, .val = 'L'},
+@@ -178,7 +180,8 @@ static char commands_v_options[NUMBER_OF
+ /*DEL_CHAIN*/ {'x','x','x','x','x',' ','x','x','x','x','x','x'},
+ /*SET_POLICY*/{'x','x','x','x','x',' ','x','x','x','x','x',' '},
+ /*RENAME*/    {'x','x','x','x','x',' ','x','x','x','x','x','x'},
+-/*LIST_RULES*/{'x','x','x','x','x',' ','x','x','x','x','x','x'}
++/*LIST_RULES*/{'x','x','x','x','x',' ','x','x','x','x','x','x'},
++/*CHECK*/     {'x',' ',' ',' ',' ',' ','x',' ',' ','x','x',' '},
+ };
+ 
+ static int inverse_for_options[NUMBER_OF_OPT] =
+@@ -252,7 +255,7 @@ static void
+ exit_printhelp(struct xtables_rule_match *matches)
+ {
+ 	printf("%s v%s\n\n"
+-"Usage: %s -[AD] chain rule-specification [options]\n"
++"Usage: %s -[ACD] chain rule-specification [options]\n"
+ "       %s -I chain [rulenum] rule-specification [options]\n"
+ "       %s -R chain rulenum rule-specification [options]\n"
+ "       %s -D chain rulenum [options]\n"
+@@ -270,6 +273,7 @@ exit_printhelp(struct xtables_rule_match
+ "Commands:\n"
+ "Either long or short options are allowed.\n"
+ "  --append  -A chain		Append to chain\n"
++"  --check   -C chain		Check for the existence of a rule\n"
+ "  --delete  -D chain		Delete matching rule from chain\n"
+ "  --delete  -D chain rulenum\n"
+ "				Delete rule rulenum (1 = first) from chain\n"
+@@ -875,6 +879,36 @@ delete_entry(const ipt_chainlabel chain,
+ 	return ret;
+ }
+ 
++static int
++check_entry(const ipt_chainlabel chain, struct ipt_entry *fw,
++	    unsigned int nsaddrs, const struct in_addr *saddrs,
++	    const struct in_addr *smasks, unsigned int ndaddrs,
++	    const struct in_addr *daddrs, const struct in_addr *dmasks,
++	    bool verbose, struct iptc_handle *handle,
++	    struct xtables_rule_match *matches,
++	    const struct xtables_target *target)
++{
++	unsigned int i, j;
++	int ret = 1;
++	unsigned char *mask;
++
++	mask = make_delete_mask(matches, target);
++	for (i = 0; i < nsaddrs; i++) {
++		fw->ip.src.s_addr = saddrs[i].s_addr;
++		fw->ip.smsk.s_addr = smasks[i].s_addr;
++		for (j = 0; j < ndaddrs; j++) {
++			fw->ip.dst.s_addr = daddrs[j].s_addr;
++			fw->ip.dmsk.s_addr = dmasks[j].s_addr;
++			if (verbose)
++				print_firewall_line(fw, handle);
++			ret &= iptc_check_entry(chain, fw, mask, handle);
++		}
++	}
++
++	free(mask);
++	return ret;
++}
++
+ int
+ for_each_chain(int (*fn)(const ipt_chainlabel, int, struct iptc_handle *),
+ 	       int verbose, int builtinstoo, struct iptc_handle *handle)
+@@ -1359,7 +1393,7 @@ int do_command(int argc, char *argv[], c
+ 	opterr = 0;
+ 
+ 	while ((c = getopt_long(argc, argv,
+-	   "-A:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvnt:m:xc:g:",
++	   "-A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvnt:m:xc:g:",
+ 					   opts, NULL)) != -1) {
+ 		switch (c) {
+ 			/*
+@@ -1371,6 +1405,12 @@ int do_command(int argc, char *argv[], c
+ 			chain = optarg;
+ 			break;
+ 
++		case 'C':
++			add_command(&command, CMD_CHECK, CMD_NONE,
++				    invert);
++			chain = optarg;
++			break;
++
+ 		case 'D':
+ 			add_command(&command, CMD_DELETE, CMD_NONE,
+ 				    invert);
+@@ -1852,7 +1892,7 @@ int do_command(int argc, char *argv[], c
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "nothing appropriate following !");
+ 
+-	if (command & (CMD_REPLACE | CMD_INSERT | CMD_DELETE | CMD_APPEND)) {
++	if (command & (CMD_REPLACE | CMD_INSERT | CMD_DELETE | CMD_APPEND | CMD_CHECK)) {
+ 		if (!(options & OPT_DESTINATION))
+ 			dhostnetworkmask = "0.0.0.0/0";
+ 		if (!(options & OPT_SOURCE))
+@@ -1898,6 +1938,7 @@ int do_command(int argc, char *argv[], c
+ 
+ 	if (command == CMD_APPEND
+ 	    || command == CMD_DELETE
++	    || command == CMD_CHECK
+ 	    || command == CMD_INSERT
+ 	    || command == CMD_REPLACE) {
+ 		if (strcmp(chain, "PREROUTING") == 0
+@@ -1988,6 +2029,13 @@ int do_command(int argc, char *argv[], c
+ 	case CMD_DELETE_NUM:
+ 		ret = iptc_delete_num_entry(chain, rulenum - 1, *handle);
+ 		break;
++	case CMD_CHECK:
++		ret = check_entry(chain, e,
++				   nsaddrs, saddrs, smasks,
++				   ndaddrs, daddrs, dmasks,
++				   options&OPT_VERBOSE,
++				   *handle, matches, target);
++		break;
+ 	case CMD_REPLACE:
+ 		ret = replace_entry(chain, e, rulenum - 1,
+ 				    saddrs, smasks, daddrs, dmasks,
+diff -up iptables-1.4.7/libiptc/libip4tc.c.check_option iptables-1.4.7/libiptc/libip4tc.c
+--- iptables-1.4.7/libiptc/libip4tc.c.check_option	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/libiptc/libip4tc.c	2015-03-26 21:53:54.565977154 +0100
+@@ -76,6 +76,7 @@ typedef unsigned int socklen_t;
+ #define TC_INSERT_ENTRY		iptc_insert_entry
+ #define TC_REPLACE_ENTRY	iptc_replace_entry
+ #define TC_APPEND_ENTRY		iptc_append_entry
++#define TC_CHECK_ENTRY		iptc_check_entry
+ #define TC_DELETE_ENTRY		iptc_delete_entry
+ #define TC_DELETE_NUM_ENTRY	iptc_delete_num_entry
+ #define TC_FLUSH_ENTRIES	iptc_flush_entries
+diff -up iptables-1.4.7/libiptc/libip6tc.c.check_option iptables-1.4.7/libiptc/libip6tc.c
+--- iptables-1.4.7/libiptc/libip6tc.c.check_option	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/libiptc/libip6tc.c	2015-03-26 21:53:54.565977154 +0100
+@@ -71,6 +71,7 @@ typedef unsigned int socklen_t;
+ #define TC_INSERT_ENTRY		ip6tc_insert_entry
+ #define TC_REPLACE_ENTRY	ip6tc_replace_entry
+ #define TC_APPEND_ENTRY		ip6tc_append_entry
++#define TC_CHECK_ENTRY		ip6tc_check_entry
+ #define TC_DELETE_ENTRY		ip6tc_delete_entry
+ #define TC_DELETE_NUM_ENTRY	ip6tc_delete_num_entry
+ #define TC_FLUSH_ENTRIES	ip6tc_flush_entries
+diff -up iptables-1.4.7/libiptc/libiptc.c.check_option iptables-1.4.7/libiptc/libiptc.c
+--- iptables-1.4.7/libiptc/libiptc.c.check_option	2015-03-26 21:53:54.541976812 +0100
++++ iptables-1.4.7/libiptc/libiptc.c	2015-03-26 22:29:04.687795579 +0100
+@@ -33,6 +33,7 @@
+ #include <fcntl.h>
+ #include <sys/types.h>
+ #include <sys/socket.h>
++#include <stdbool.h>
+ #include <xtables.h>
+ 
+ #include "linux_list.h"
+@@ -1964,12 +1965,11 @@ is_same(const STRUCT_ENTRY *a,
+ 	const STRUCT_ENTRY *b,
+ 	unsigned char *matchmask);
+ 
+-/* Delete the first rule in `chain' which matches `fw'. */
+-int
+-TC_DELETE_ENTRY(const IPT_CHAINLABEL chain,
+-		const STRUCT_ENTRY *origfw,
+-		unsigned char *matchmask,
+-		struct xtc_handle *handle)
++
++/* find the first rule in `chain' which matches `fw' and remove it unless dry_run is set */
++static int delete_entry(const IPT_CHAINLABEL chain, const STRUCT_ENTRY *origfw,
++			unsigned char *matchmask, struct xtc_handle *handle,
++			bool dry_run)
+ {
+ 	struct chain_head *c;
+ 	struct rule_head *r, *i;
+@@ -2013,6 +2013,12 @@ TC_DELETE_ENTRY(const IPT_CHAINLABEL cha
+ 		if (!target_same(r, i, mask))
+ 			continue;
+ 
++		/* if we are just doing a dry run, we simply skip the rest */
++		if (dry_run) {
++			free(r);
++			return 1;
++		}
++
+ 		/* If we are about to delete the rule that is the
+ 		 * current iterator, move rule iterator back.  next
+ 		 * pointer will then point to real next node */
+@@ -2035,6 +2041,20 @@ TC_DELETE_ENTRY(const IPT_CHAINLABEL cha
+ 	return 0;
+ }
+ 
++/* check whether a specified rule is present */
++int TC_CHECK_ENTRY(const IPT_CHAINLABEL chain, const STRUCT_ENTRY *origfw,
++		   unsigned char *matchmask, struct xtc_handle *handle)
++{
++	/* do a dry-run delete to find out whether a matching rule exists */
++	return delete_entry(chain, origfw, matchmask, handle, true);
++}
++
++/* Delete the first rule in `chain' which matches `fw'. */
++int TC_DELETE_ENTRY(const IPT_CHAINLABEL chain,	const STRUCT_ENTRY *origfw,
++		    unsigned char *matchmask, struct xtc_handle *handle)
++{
++	return delete_entry(chain, origfw, matchmask, handle, false);
++}
+ 
+ /* Delete the rule in position `rulenum' in `chain'. */
+ int

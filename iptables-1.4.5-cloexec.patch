@@ -1,0 +1,149 @@
+diff -up iptables-1.4.5/extensions/libipt_realm.c.cloexec iptables-1.4.5/extensions/libipt_realm.c
+--- iptables-1.4.5/extensions/libipt_realm.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/extensions/libipt_realm.c	2009-09-17 10:52:00.000000000 +0200
+@@ -49,7 +49,7 @@ static void load_realms(void)
+ 	int id;
+ 	struct realmname *oldnm = NULL, *newnm = NULL;
+ 
+-	fil = fopen(rfnm, "r");
++	fil = fopen(rfnm, "re");
+ 	if (!fil) {
+ 		rdberr = 1;
+ 		return;
+diff -up iptables-1.4.5/extensions/libipt_set.h.cloexec iptables-1.4.5/extensions/libipt_set.h
+--- iptables-1.4.5/extensions/libipt_set.h.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/extensions/libipt_set.h	2009-09-17 11:02:07.000000000 +0200
+@@ -2,6 +2,7 @@
+ #define _LIBIPT_SET_H
+ 
+ #include <unistd.h>
++#include <fcntl.h>
+ #include <sys/types.h>
+ #include <sys/socket.h>
+ #include <errno.h>
+@@ -48,6 +49,12 @@ static int get_version(unsigned *version
+ 		xtables_error(OTHER_PROBLEM,
+ 			   "Can't open socket to ipset.\n");
+ 
++	if (fcntl(sockfd, F_SETFD, FD_CLOEXEC) == -1) {
++		xtables_error(OTHER_PROBLEM,
++			      "Could not set close on exec: %s\n",
++			      strerror(errno));
++	}
++
+ 	req_version.op = IP_SET_OP_VERSION;
+ 	res = getsockopt(sockfd, SOL_IP, SO_IP_SET, &req_version, &size);
+ 	if (res != 0)
+diff -up iptables-1.4.5/ip6tables-restore.c.cloexec iptables-1.4.5/ip6tables-restore.c
+--- iptables-1.4.5/ip6tables-restore.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/ip6tables-restore.c	2009-09-17 10:52:00.000000000 +0200
+@@ -169,7 +169,7 @@ int main(int argc, char *argv[])
+ 	}
+ 
+ 	if (optind == argc - 1) {
+-		in = fopen(argv[optind], "r");
++		in = fopen(argv[optind], "re");
+ 		if (!in) {
+ 			fprintf(stderr, "Can't open %s: %s\n", argv[optind],
+ 				strerror(errno));
+diff -up iptables-1.4.5/ip6tables-save.c.cloexec iptables-1.4.5/ip6tables-save.c
+--- iptables-1.4.5/ip6tables-save.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/ip6tables-save.c	2009-09-17 10:52:00.000000000 +0200
+@@ -41,7 +41,7 @@ static int for_each_table(int (*func)(co
+ 	FILE *procfile = NULL;
+ 	char tablename[IP6T_TABLE_MAXNAMELEN+1];
+ 
+-	procfile = fopen("/proc/net/ip6_tables_names", "r");
++	procfile = fopen("/proc/net/ip6_tables_names", "re");
+ 	if (!procfile)
+ 		return ret;
+ 
+diff -up iptables-1.4.5/iptables-restore.c.cloexec iptables-1.4.5/iptables-restore.c
+--- iptables-1.4.5/iptables-restore.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/iptables-restore.c	2009-09-17 10:52:00.000000000 +0200
+@@ -175,7 +175,7 @@ main(int argc, char *argv[])
+ 	}
+ 
+ 	if (optind == argc - 1) {
+-		in = fopen(argv[optind], "r");
++		in = fopen(argv[optind], "re");
+ 		if (!in) {
+ 			fprintf(stderr, "Can't open %s: %s\n", argv[optind],
+ 				strerror(errno));
+diff -up iptables-1.4.5/iptables-save.c.cloexec iptables-1.4.5/iptables-save.c
+--- iptables-1.4.5/iptables-save.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/iptables-save.c	2009-09-17 10:52:00.000000000 +0200
+@@ -39,7 +39,7 @@ static int for_each_table(int (*func)(co
+ 	FILE *procfile = NULL;
+ 	char tablename[IPT_TABLE_MAXNAMELEN+1];
+ 
+-	procfile = fopen("/proc/net/ip_tables_names", "r");
++	procfile = fopen("/proc/net/ip_tables_names", "re");
+ 	if (!procfile)
+ 		return ret;
+ 
+diff -up iptables-1.4.5/iptables-xml.c.cloexec iptables-1.4.5/iptables-xml.c
+--- iptables-1.4.5/iptables-xml.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/iptables-xml.c	2009-09-17 10:52:00.000000000 +0200
+@@ -653,7 +653,7 @@ main(int argc, char *argv[])
+ 	}
+ 
+ 	if (optind == argc - 1) {
+-		in = fopen(argv[optind], "r");
++		in = fopen(argv[optind], "re");
+ 		if (!in) {
+ 			fprintf(stderr, "Can't open %s: %s", argv[optind],
+ 				strerror(errno));
+diff -up iptables-1.4.5/libiptc/libiptc.c.cloexec iptables-1.4.5/libiptc/libiptc.c
+--- iptables-1.4.5/libiptc/libiptc.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/libiptc/libiptc.c	2009-09-17 11:02:16.000000000 +0200
+@@ -29,6 +29,8 @@
+  * 	- performance work: speedup initial ruleset parsing.
+  * 	- sponsored by ComX Networks A/S (http://www.comx.dk/)
+  */
++#include <unistd.h>
++#include <fcntl.h>
+ #include <sys/types.h>
+ #include <sys/socket.h>
+ #include <xtables.h>
+@@ -1326,6 +1328,12 @@ TC_INIT(const char *tablename)
+ 	if (sockfd < 0)
+ 		return NULL;
+ 
++	if (fcntl(sockfd, F_SETFD, FD_CLOEXEC) == -1) {
++		fprintf(stderr, "Could not set close on exec: %s\n",
++			strerror(errno));
++		abort();
++	}
++
+ retry:
+ 	s = sizeof(info);
+ 
+diff -up iptables-1.4.5/xtables.c.cloexec iptables-1.4.5/xtables.c
+--- iptables-1.4.5/xtables.c.cloexec	2009-09-14 18:36:55.000000000 +0200
++++ iptables-1.4.5/xtables.c	2009-09-17 10:52:00.000000000 +0200
+@@ -292,6 +292,11 @@ static char *get_modprobe(void)
+ 	procfile = open(PROC_SYS_MODPROBE, O_RDONLY);
+ 	if (procfile < 0)
+ 		return NULL;
++ 	if (fcntl(procfile, F_SETFD, FD_CLOEXEC) == -1) {
++ 		fprintf(stderr, "Could not set close on exec: %s\n",
++ 			strerror(errno));
++ 		exit(1);
++ 	}
+ 
+ 	ret = (char *) malloc(PROCFILE_BUFSIZ);
+ 	if (ret) {
+@@ -684,6 +689,12 @@ static int compatible_revision(const cha
+ 		exit(1);
+ 	}
+ 
++	if (fcntl(sockfd, F_SETFD, FD_CLOEXEC) == -1) {
++		fprintf(stderr, "Could not set close on exec: %s\n",
++			strerror(errno));
++		exit(1);
++	}
++
+ 	xtables_load_ko(xtables_modprobe_program, true);
+ 
+ 	strcpy(rev.name, name);

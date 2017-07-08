@@ -1,0 +1,11 @@
+diff -up iptables-1.4.7/extensions/libxt_dccp.c.fix_dccp_types_print iptables-1.4.7/extensions/libxt_dccp.c
+--- iptables-1.4.7/extensions/libxt_dccp.c.fix_dccp_types_print	2010-03-01 15:11:28.000000000 +0100
++++ iptables-1.4.7/extensions/libxt_dccp.c	2015-02-27 16:30:03.219686198 +0100
+@@ -256,6 +256,7 @@ print_types(u_int16_t types, int inverte
+ 
+ 		types &= ~(1 << i);
+ 	}
++	printf(" ");
+ }
+ 
+ static void
