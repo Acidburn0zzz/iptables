@@ -5,8 +5,6 @@ Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.7
 Release: 16%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
-Source1: iptables.init
-Source2: iptables-config
 Source3: libxt_AUDIT.man
 Patch5: iptables-1.4.5-cloexec.patch
 Patch6: iptables-1.4.7-xt_CHECKSUM.patch
@@ -20,6 +18,7 @@ Patch12: iptables-1.4.7-rhbz_983198.patch
 Patch13: iptables-1.4.7-ipXt_set.patch
 Patch14: iptables-1.4.7-fix_dccp_types_print.patch
 Patch15: iptables-1.4.7-check_option.patch
+Patch100: iptables-1.4.6-imq.diff
 Group: System Environment/Base
 URL: http://www.netfilter.org/
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
@@ -47,8 +46,6 @@ you should install this package.
 Summary: IPv6 support for iptables
 Group: System Environment/Base
 Requires: %{name} = %{version}-%{release}
-Requires(post): chkconfig
-Requires(preun): chkconfig
 
 %description ipv6
 The iptables package contains IPv6 (the next version of the IP
@@ -84,6 +81,7 @@ stable and may change with every new version. It is therefore unsupported.
 %patch13 -p1 -b .ipXt_set
 %patch14 -p1 -b .fix_dccp_types_print
 %patch15 -p1 -b .check_option
+%patch100 -p0
 cp %{SOURCE3} extensions/
 
 %build
@@ -125,16 +123,6 @@ done
 # move pkgconfig to %{_libdir}
 mv %{buildroot}/%{_lib}/pkgconfig %{buildroot}/%{_libdir}/
 
-# install init scripts and configuration files
-install -d -m 755 %{buildroot}/etc/rc.d/init.d
-install -c -m 755 %{SOURCE1} %{buildroot}/etc/rc.d/init.d/iptables
-sed -e 's;iptables;ip6tables;g' -e 's;IPTABLES;IP6TABLES;g' < %{SOURCE1} > ip6tables.init
-install -c -m 755 ip6tables.init %{buildroot}/etc/rc.d/init.d/ip6tables
-install -d -m 755 %{buildroot}/etc/sysconfig
-install -c -m 755 %{SOURCE2} %{buildroot}/etc/sysconfig/iptables-config
-sed -e 's;iptables;ip6tables;g' -e 's;IPTABLES;IP6TABLES;g' < %{SOURCE2} > ip6tables-config
-install -c -m 755 ip6tables-config %{buildroot}/etc/sysconfig/ip6tables-config
-
 # rename files for alternative usage
 cd %{buildroot}
 for i in sbin/ip*tables sbin/ip*tables-multi sbin/ip*tables-restore sbin/ip*tables-save bin/iptables-xml; do
@@ -166,7 +154,6 @@ fi
 
 %post
 /sbin/ldconfig
-/sbin/chkconfig --add iptables
 #
 # Packges other than 1.4.7 need to add this to the alternatives call:
 # --slave /%{_lib}/xtables lib-xtables.%{_arch} /%{_lib}/xtables-%{version} \
@@ -189,8 +176,7 @@ fi
         --slave /%{_lib}/libipq.so.0 libipq0.%{_arch} /%{_lib}/libipq.so.0-%{version} \
         --slave /%{_lib}/libipq.so.0.0.0 libipq000.%{_arch} /%{_lib}/libipq.so.0.0.0-%{version} \
         --slave /%{_lib}/libxtables.so.4 libxtables4.%{_arch} /%{_lib}/libxtables.so.4-%{version} \
-        --slave /%{_lib}/libxtables.so.4.0.0 libxtables400.%{_arch} /%{_lib}/libxtables.so.4.0.0-%{version} \
-        --initscript iptables
+        --slave /%{_lib}/libxtables.so.4.0.0 libxtables400.%{_arch} /%{_lib}/libxtables.so.4.0.0-%{version}
 
 %postun
 /sbin/ldconfig
@@ -223,15 +209,13 @@ if [ -d /%{_lib}/xtables-1.4.7 ]; then
 fi
 
 %post ipv6
-/sbin/chkconfig --add ip6tables
 %{_sbindir}/alternatives --install /sbin/ip6tables ip6tables.%{_arch} /sbin/ip6tables-%{version} 90 \
         --slave /sbin/ip6tables-multi sbin-ip6tables-multi.%{_arch} /sbin/ip6tables-multi-%{version} \
         --slave /sbin/ip6tables-restore sbin-ip6tables-restore.%{_arch}  /sbin/ip6tables-restore-%{version} \
         --slave /sbin/ip6tables-save sbin-ip6tables-save.%{_arch} /sbin/ip6tables-save-%{version} \
         --slave %{_mandir}/man8/ip6tables-restore.8.gz man-ip6tables-restore.%{_arch} %{_mandir}/man8/ip6tables-restore-%{version}.8.gz \
         --slave %{_mandir}/man8/ip6tables-save.8.gz man-ip6tables-save.%{_arch} %{_mandir}/man8/ip6tables-save-%{version}.8.gz \
-        --slave %{_mandir}/man8/ip6tables.8.gz man-ip6tables.%{_arch} %{_mandir}/man8/ip6tables-%{version}.8.gz \
-        --initscript ip6tables
+        --slave %{_mandir}/man8/ip6tables.8.gz man-ip6tables.%{_arch} %{_mandir}/man8/ip6tables-%{version}.8.gz
 
 %postun ipv6
 if [ "$1" -ge "1" ]; then
@@ -257,8 +241,6 @@ fi
 %files
 %defattr(-,root,root)
 %doc COPYING INSTALL INCOMPATIBILITIES
-%attr(0755,root,root) /etc/rc.d/init.d/iptables
-%config(noreplace) %attr(0600,root,root) /etc/sysconfig/iptables-config
 /sbin/iptables*-%{version}
 /bin/iptables-xml-%{version}
 %{_mandir}/man8/iptables*-%{version}.8*
@@ -280,8 +262,6 @@ fi
 
 %files ipv6
 %defattr(-,root,root)
-%attr(0755,root,root) /etc/rc.d/init.d/ip6tables
-%config(noreplace) %attr(0600,root,root) /etc/sysconfig/ip6tables-config
 /sbin/ip6tables*-%{version}
 %{_mandir}/man8/ip6tables*-%{version}.8*
 #
@@ -311,6 +291,11 @@ fi
 %{_libdir}/pkgconfig/xtables.pc
 
 %changelog
+* Mon Aug 11 2015 ClearFoundation <developer@clearfoundation.com> 1.4.7-16.clear
+- added IMQ patches
+- removed init scripts and sysconfig configuration
+- removed chkconfig reference
+
 * Tue Mar 26 2015 Thomas Woerner <twoerner@redhat.com> 1.4.7-16
 - Fixed ressource leak in libiptc found by coverity (rhbz#1088361)
 - Copy custom plugins also for releases up to 14 (rhbz#1088400)
