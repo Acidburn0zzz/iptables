@@ -1,0 +1,143 @@
+Adapted version of
+
+commit 9cd3adbed2fd8cdb6366293f3799573b811be89b
+Author: Dan Williams <dcbw@redhat.com>
+Date:   Mon Apr 10 12:31:56 2017 -0500
+
+    iptables-restore/ip6tables-restore: add --version/-V argument
+    
+    Prints program version just like iptables/ip6tables.
+    
+    Signed-off-by: Dan Williams <dcbw@redhat.com>
+    Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff -up iptables-1.4.21/iptables/ip6tables-restore.c.restore_version iptables-1.4.21/iptables/ip6tables-restore.c
+--- iptables-1.4.21/iptables/ip6tables-restore.c.restore_version	2017-04-20 16:49:34.253130005 +0200
++++ iptables-1.4.21/iptables/ip6tables-restore.c	2017-04-20 16:51:43.931089903 +0200
+@@ -37,6 +37,7 @@ static const struct option options[] = {
+ 	{.name = "binary",        .has_arg = 0, .val = 'b'},
+ 	{.name = "counters",      .has_arg = 0, .val = 'c'},
+ 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
++	{.name = "version",       .has_arg = 0, .val = 'V'},
+ 	{.name = "test",          .has_arg = 0, .val = 't'},
+ 	{.name = "help",          .has_arg = 0, .val = 'h'},
+ 	{.name = "noflush",       .has_arg = 0, .val = 'n'},
+@@ -49,12 +50,16 @@ static const struct option options[] = {
+ 
+ static void print_usage(const char *name, const char *version) __attribute__((noreturn));
+ 
++#define prog_name ip6tables_globals.program_name
++#define prog_vers ip6tables_globals.program_version
++
+ static void print_usage(const char *name, const char *version)
+ {
+-	fprintf(stderr, "Usage: %s [-b] [-c] [-v] [-t] [-h] [-w secs] [-W usecs]\n"
++	fprintf(stderr, "Usage: %s [-b] [-c] [-v] [-V] [-t] [-h] [-w secs] [-W usecs]\n"
+ 			"	   [ --binary ]\n"
+ 			"	   [ --counters ]\n"
+ 			"	   [ --verbose ]\n"
++			"	   [ --version]\n"
+ 			"	   [ --test ]\n"
+ 			"	   [ --help ]\n"
+ 			"	   [ --wait=<seconds>\n"
+@@ -79,8 +84,7 @@ static struct xtc_handle *create_handle(
+ 
+ 	if (!handle) {
+ 		xtables_error(PARAMETER_PROBLEM, "%s: unable to initialize "
+-			"table '%s'\n", ip6tables_globals.program_name,
+-			tablename);
++			"table '%s'\n", prog_name, tablename);
+ 		exit(1);
+ 	}
+ 	return handle;
+@@ -214,7 +218,7 @@ int ip6tables_restore_main(int argc, cha
+ 	init_extensions6();
+ #endif
+ 
+-	while ((c = getopt_long(argc, argv, "bcvthnwWM:T:", options, NULL)) != -1) {
++	while ((c = getopt_long(argc, argv, "bcvVthnwWM:T:", options, NULL)) != -1) {
+ 		switch (c) {
+ 			case 'b':
+ 				binary = 1;
+@@ -225,6 +229,9 @@ int ip6tables_restore_main(int argc, cha
+ 			case 'v':
+ 				verbose = 1;
+ 				break;
++			case 'V':
++				printf("%s v%s\n", prog_name, prog_vers);
++				exit(0);
+ 			case 't':
+ 				testing = 1;
+ 				break;
+diff -up iptables-1.4.21/iptables/iptables-restore.8.in.restore_version iptables-1.4.21/iptables/iptables-restore.8.in
+--- iptables-1.4.21/iptables/iptables-restore.8.in.restore_version	2013-11-22 12:18:13.000000000 +0100
++++ iptables-1.4.21/iptables/iptables-restore.8.in	2017-04-20 16:52:20.883299806 +0200
+@@ -23,9 +23,9 @@ iptables-restore \(em Restore IP Tables
+ .P
+ ip6tables-restore \(em Restore IPv6 Tables
+ .SH SYNOPSIS
+-\fBiptables\-restore\fP [\fB\-chntv\fP] [\fB\-M\fP \fImodprobe\fP]
++\fBiptables\-restore\fP [\fB\-chntvV\fP] [\fB\-M\fP \fImodprobe\fP]
+ .P
+-\fBip6tables\-restore\fP [\fB\-chntv\fP] [\fB\-M\fP \fImodprobe\fP]
++\fBip6tables\-restore\fP [\fB\-chntvV\fP] [\fB\-M\fP \fImodprobe\fP]
+ [\fB\-T\fP \fIname\fP]
+ .SH DESCRIPTION
+ .PP
+@@ -51,6 +51,9 @@ Only parse and construct the ruleset, bu
+ \fB\-v\fP, \fB\-\-verbose\fP
+ Print additional debug info during ruleset processing.
+ .TP
++\fB\-V\fP, \fB\-\-version\fP
++Print the program version number.
++.TP
+ \fB\-M\fP, \fB\-\-modprobe\fP \fImodprobe_program\fP
+ Specify the path to the modprobe program. By default, iptables-restore will
+ inspect /proc/sys/kernel/modprobe to determine the executable's path.
+diff -up iptables-1.4.21/iptables/iptables-restore.c.restore_version iptables-1.4.21/iptables/iptables-restore.c
+--- iptables-1.4.21/iptables/iptables-restore.c.restore_version	2017-04-20 16:49:34.253130005 +0200
++++ iptables-1.4.21/iptables/iptables-restore.c	2017-04-20 17:29:32.495390523 +0200
+@@ -34,6 +34,7 @@ static const struct option options[] = {
+ 	{.name = "binary",        .has_arg = 0, .val = 'b'},
+ 	{.name = "counters",      .has_arg = 0, .val = 'c'},
+ 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
++	{.name = "version",       .has_arg = 0, .val = 'V'},
+ 	{.name = "test",          .has_arg = 0, .val = 't'},
+ 	{.name = "help",          .has_arg = 0, .val = 'h'},
+ 	{.name = "noflush",       .has_arg = 0, .val = 'n'},
+@@ -47,13 +48,15 @@ static const struct option options[] = {
+ static void print_usage(const char *name, const char *version) __attribute__((noreturn));
+ 
+ #define prog_name iptables_globals.program_name
++#define prog_vers iptables_globals.program_version
+ 
+ static void print_usage(const char *name, const char *version)
+ {
+-	fprintf(stderr, "Usage: %s [-b] [-c] [-v] [-t] [-h] [-W usecs]\n"
++	fprintf(stderr, "Usage: %s [-b] [-c] [-v] [-V]  [-t] [-h] [-W usecs]\n"
+ 			"	   [ --binary ]\n"
+ 			"	   [ --counters ]\n"
+ 			"	   [ --verbose ]\n"
++			"	   [ --version]\n"
+ 			"	   [ --test ]\n"
+ 			"	   [ --help ]\n"
+ 			"	   [ --noflush ]\n"
+@@ -214,7 +217,7 @@ iptables_restore_main(int argc, char *ar
+ 	init_extensions4();
+ #endif
+ 
+-	while ((c = getopt_long(argc, argv, "bcvthnwWM:T:", options, NULL)) != -1) {
++	while ((c = getopt_long(argc, argv, "bcvVthnwWM:T:", options, NULL)) != -1) {
+ 		switch (c) {
+ 			case 'b':
+ 				binary = 1;
+@@ -225,6 +228,9 @@ iptables_restore_main(int argc, char *ar
+ 			case 'v':
+ 				verbose = 1;
+ 				break;
++			case 'V':
++				printf("%s v%s\n", prog_name, prog_vers);
++				exit(0);
+ 			case 't':
+ 				testing = 1;
+ 				break;

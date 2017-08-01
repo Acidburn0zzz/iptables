@@ -1,0 +1,78 @@
+commit 24f8174646123c2833bc87967b366796231b04e0
+Author: Liping Zhang <zlpnobody@gmail.com>
+Date:   Sun Feb 5 21:57:34 2017 +0800
+
+    xshared: do not lock again and again if "-w" option is not specified
+    
+    After running the following commands, some confusing messages was printed
+    out:
+      # while : ; do
+      iptables -A INPUT &
+      iptables -D INPUT &
+      done
+      [...]
+      Another app is currently holding the xtables lock; still -9s 0us time
+      ahead to have a chance to grab the lock...
+      Another app is currently holding the xtables lock; still -29s 0us time
+      ahead to have a chance to grab the lock...
+    
+    If "-w" option is not specified, the "wait" will be zero, so we should
+    check whether the timer_left is less than wait_interval before we call
+    select to sleep.
+    
+    Also remove unused "BASE_MICROSECONDS" and "struct timeval waited_time"
+    introduced by commit e8f857a5a151 ("xtables: Add an interval option for
+    xtables lock wait").
+    
+    Fixes: e8f857a5a151 ("xtables: Add an interval option for xtables lock wait")
+    Signed-off-by: Liping Zhang <zlpnobody@gmail.com>
+    Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff --git a/iptables/xshared.c b/iptables/xshared.c
+index cccb8ae..055acf2 100644
+--- a/iptables/xshared.c
++++ b/iptables/xshared.c
+@@ -17,7 +17,6 @@
+ #include "xshared.h"
+ 
+ #define XT_LOCK_NAME	"/run/xtables.lock"
+-#define BASE_MICROSECONDS	100000
+ 
+ /*
+  * Print out any special helps. A user might like to be able to add a --help
+@@ -249,13 +248,11 @@ void xs_init_match(struct xtables_match *match)
+ 
+ bool xtables_lock(int wait, struct timeval *wait_interval)
+ {
+-	struct timeval time_left, wait_time, waited_time;
++	struct timeval time_left, wait_time;
+ 	int fd, i = 0;
+ 
+ 	time_left.tv_sec = wait;
+ 	time_left.tv_usec = 0;
+-	waited_time.tv_sec = 0;
+-	waited_time.tv_usec = 0;
+ 
+ 	fd = open(XT_LOCK_NAME, O_CREAT, 0600);
+ 	if (fd < 0)
+@@ -264,6 +261,9 @@ bool xtables_lock(int wait, struct timeval *wait_interval)
+ 	while (1) {
+ 		if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+ 			return true;
++		else if (wait >= 0 && timercmp(&time_left, wait_interval, <))
++			return false;
++
+ 		if (++i % 10 == 0) {
+ 			if (wait != -1)
+ 				fprintf(stderr, "Another app is currently holding the xtables lock; "
+@@ -279,10 +279,7 @@ bool xtables_lock(int wait, struct timeval *wait_interval)
+ 		if (wait == -1)
+ 			continue;
+ 
+-		timeradd(&waited_time, wait_interval, &waited_time);
+ 		timersub(&time_left, wait_interval, &time_left);
+-		if (!timerisset(&time_left))
+-			return false;
+ 	}
+ }
+ 

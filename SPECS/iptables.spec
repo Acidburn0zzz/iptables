@@ -7,7 +7,7 @@
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.21
-Release: 17%{?dist}
+Release: 18%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
@@ -22,6 +22,18 @@ Patch3: iptables-1.4.21-wait_seconds.patch
 Patch4: iptables-1.4.21-flock_wait.patch
 Patch5: iptables-1.4.21-rhbz_1261238.patch
 Patch6: iptables-c513cc3-rhbz_1298879.patch
+Patch7: iptables-1.4.21-wait-interval.patch
+Patch8: iptables-do_not_lock_again_and_again.patch
+Patch9: iptables-use_the_blocking_file_lock_request.patch
+Patch10: iptables-1.4.21-configure_set_lock_file_path.patch
+Patch11: iptables-1.4.21-move_XT_LOCK_NAME_to_config.h.patch
+Patch12: iptables-1.4.21-remove_duplicated_argument_parsing.patch
+Patch13: iptables-1.4.21-restore_support_acquiring_the_lock.patch
+# One patch invalid: 1cf4ba6fbe85b3cbe9828a7947000290e1989986
+Patch14: iptables-do_not_set_changed_for_check_options.patch
+Patch15: iptables-1.4.21-restore_version.patch
+Patch16: iptables-1.4.21-restore_wait_man.patch
+
 Group: System Environment/Base
 URL: http://www.netfilter.org/
 License: GPLv2
@@ -32,6 +44,8 @@ BuildRequires: libnfnetlink-devel
 BuildRequires: libselinux-devel
 BuildRequires: kernel-headers
 BuildRequires: systemd
+BuildRequires: automake
+BuildRequires: autoconf
 
 %description
 The iptables utility controls the network packet filtering code in the
@@ -90,6 +104,16 @@ Currently only provides nfnl_osf with the pf.os database.
 %patch4 -p1 -b .flock_wait
 %patch5 -p1 -b .rhbz_1261238
 %patch6 -p1 -b .rhbz_1298879
+%patch7 -p1 -b .wait-interval
+%patch8 -p1 -b .do_not_lock_again_and_again
+%patch9 -p1 -b .use_the_blocking_file_lock_request
+%patch10 -p1 -b .configure_set_lock_file_path
+%patch11 -p1 -b .move_XT_LOCK_NAME_to_config.h
+%patch12 -p1 -b .remove_duplicated_argument_parsing
+%patch13 -p1 -b .restore_support_acquiring_the_lock
+%patch14 -p1 -b .do_not_set_changed_for_check_options
+%patch15 -p1 -b .restore_version
+%patch16 -p1 -b .restore_wait_man
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing " \
@@ -243,6 +267,12 @@ done
 
 
 %changelog
+* Mon Apr 24 2017 Thomas Woerner <twoerner@redhat.com> 1.4.21-18
+- Add support for --wait options to restore commands (RHBZ#1438597)
+- Do not set changed flag for rule check operations with module targets
+  (RHBZ#1438597)
+- Add version option to restore commands (RHBZ#1438597)
+
 * Fri Jul  1 2016 Thomas Woerner <twoerner@redhat.com> 1.4.21-17
 - Fixed init script not to fail on missing restorecon (RHBZ#1246380)
 - Adapted man page snipplet for TRACE to use proper logging backend names
