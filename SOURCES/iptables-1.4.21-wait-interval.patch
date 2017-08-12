@@ -1,0 +1,330 @@
+Adapted version of
+
+commit e8f857a5a1514c3e7d0d8ea0f7d2d571f0e37bd1
+Author: Subash Abhinov Kasiviswanathan <subashab@codeaurora.org>
+Date:   Thu Jun 23 18:44:06 2016 -0600
+
+    xtables: Add an interval option for xtables lock wait
+    
+    ip[6]tables currently waits for 1 second for the xtables lock to be
+    freed if the -w option is used. We have seen that the lock is held
+    much less than that resulting in unnecessary delay when trying to
+    acquire the lock. This problem is even severe in case of latency
+    sensitive applications.
+    
+    Introduce a new option 'W' to specify the wait interval in microseconds.
+    If this option is not specified, the command sleeps for 1 second by
+    default.
+    
+    v1->v2: Change behavior to take millisecond sleep as an argument to
+    -w as suggested by Pablo. Also maintain current behavior for -w to
+    sleep for 1 second as mentioned by Liping.
+    
+    v2->v3: Move the millisecond behavior to a new option as suggested
+    by Pablo.
+    
+    v3->v4: Use select instead of usleep. Sleep every iteration for
+    the time specified in the "-W" argument. Update man page.
+    
+    v4->v5: Fix compilation error when enabling nftables
+    
+    v5->v6: Simplify -W so it only takes the interval wait in microseconds.
+    Bail out if -W is specific but -w is not.
+    
+    Joint work with Pablo Neira.
+    
+    Signed-off-by: Subash Abhinov Kasiviswanathan <subashab@codeaurora.org>
+    Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff -up iptables-1.4.21/iptables/ip6tables.c.wait-interval iptables-1.4.21/iptables/ip6tables.c
+--- iptables-1.4.21/iptables/ip6tables.c.wait-interval	2017-04-05 14:04:04.560346651 +0200
++++ iptables-1.4.21/iptables/ip6tables.c	2017-04-05 14:04:04.562346670 +0200
+@@ -103,6 +103,7 @@ static struct option original_opts[] = {
+ 	{.name = "out-interface", .has_arg = 1, .val = 'o'},
+ 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
+ 	{.name = "wait",          .has_arg = 2, .val = 'w'},
++	{.name = "wait-interval", .has_arg = 2, .val = 'W'},
+ 	{.name = "exact",         .has_arg = 0, .val = 'x'},
+ 	{.name = "version",       .has_arg = 0, .val = 'V'},
+ 	{.name = "help",          .has_arg = 2, .val = 'h'},
+@@ -258,7 +259,10 @@ exit_printhelp(const struct xtables_rule
+ "				network interface name ([+] for wildcard)\n"
+ "  --table	-t table	table to manipulate (default: `filter')\n"
+ "  --verbose	-v		verbose mode\n"
+-"  --wait	-w [seconds]	wait for the xtables lock\n"
++"  --wait	-w [seconds]	maximum wait to acquire xtables lock before give up\n"
++"  --wait-interval -W [usecs]	wait time to try to acquire xtables lock\n"
++"				interval to wait for xtables lock\n"
++"				default is 1 second\n"
+ "  --line-numbers		print line numbers when listing\n"
+ "  --exact	-x		expand numbers (display exact values)\n"
+ /*"[!] --fragment	-f		match second or further fragments only\n"*/
+@@ -1323,6 +1327,10 @@ int do_command6(int argc, char *argv[],
+ 
+ 	int verbose = 0;
+ 	int wait = 0;
++	struct timeval wait_interval = {
++		.tv_sec	= 1,
++	};
++	bool wait_interval_set = false;
+ 	const char *chain = NULL;
+ 	const char *shostnetworkmask = NULL, *dhostnetworkmask = NULL;
+ 	const char *policy = NULL, *newname = NULL;
+@@ -1358,7 +1366,7 @@ int do_command6(int argc, char *argv[],
+ 
+ 	opts = xt_params->orig_opts;
+ 	while ((cs.c = getopt_long(argc, argv,
+-	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvw::nt:m:xc:g:46",
++	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:bvw::W::nt:m:xc:g:46",
+ 					   opts, NULL)) != -1) {
+ 		switch (cs.c) {
+ 			/*
+@@ -1614,6 +1622,23 @@ int do_command6(int argc, char *argv[],
+ 						"wait seconds not numeric");
+ 			break;
+ 
++		case 'W':
++			if (restore) {
++				xtables_error(PARAMETER_PROBLEM,
++					      "You cannot use `-W' from "
++					      "ip6tables-restore");
++			}
++			if (optarg)
++				parse_wait_interval(optarg, &wait_interval);
++			else if (optind < argc &&
++				argv[optind][0] != '-' &&
++				argv[optind][0] != '!')
++				parse_wait_interval(argv[optind++],
++						    &wait_interval);
++
++			wait_interval_set = true;
++			break;
++
+ 		case 'm':
+ 			command_match(&cs);
+ 			break;
+@@ -1718,6 +1743,10 @@ int do_command6(int argc, char *argv[],
+ 		cs.invert = FALSE;
+ 	}
+ 
++	if (!wait && wait_interval_set)
++		xtables_error(PARAMETER_PROBLEM,
++			      "--wait-interval only makes sense with --wait\n");
++
+ 	if (strcmp(*table, "nat") == 0 &&
+ 	    ((policy != NULL && strcmp(policy, "DROP") == 0) ||
+ 	    (cs.jumpto != NULL && strcmp(cs.jumpto, "DROP") == 0)))
+@@ -1768,7 +1797,7 @@ int do_command6(int argc, char *argv[],
+ 	generic_opt_check(command, cs.options);
+ 
+ 	/* Attempt to acquire the xtables lock */
+-	if (!restore && !xtables_lock(wait)) {
++	if (!restore && !xtables_lock(wait, &wait_interval)) {
+ 		fprintf(stderr, "Another app is currently holding the xtables lock. ");
+ 		if (wait == 0)
+ 			fprintf(stderr, "Perhaps you want to use the -w option?\n");
+diff -up iptables-1.4.21/iptables/iptables.8.in.wait-interval iptables-1.4.21/iptables/iptables.8.in
+--- iptables-1.4.21/iptables/iptables.8.in.wait-interval	2017-04-05 14:04:04.555346605 +0200
++++ iptables-1.4.21/iptables/iptables.8.in	2017-04-05 14:04:04.562346670 +0200
+@@ -369,6 +369,13 @@ the program will exit if the lock cannot
+ make the program wait (indefinitely or for optional \fIseconds\fP) until
+ the exclusive lock can be obtained.
+ .TP
++\fB\-W\fP, \fB\-\-wait-interval\fP \fImicroseconds\fP
++Interval to wait per each iteration.
++When running latency sensitive applications, waiting for the xtables lock
++for extended durations may not be acceptable. This option will make each
++iteration take the amount of time specified. The default interval is
++1 second. This option only works with \fB\-w\fP.
++.TP
+ \fB\-n\fP, \fB\-\-numeric\fP
+ Numeric output.
+ IP addresses and port numbers will be printed in numeric format.
+diff -up iptables-1.4.21/iptables/iptables.c.wait-interval iptables-1.4.21/iptables/iptables.c
+--- iptables-1.4.21/iptables/iptables.c.wait-interval	2017-04-05 14:04:04.555346605 +0200
++++ iptables-1.4.21/iptables/iptables.c	2017-04-05 14:04:04.563346679 +0200
+@@ -100,6 +100,7 @@ static struct option original_opts[] = {
+ 	{.name = "out-interface", .has_arg = 1, .val = 'o'},
+ 	{.name = "verbose",       .has_arg = 0, .val = 'v'},
+ 	{.name = "wait",          .has_arg = 2, .val = 'w'},
++	{.name = "wait-interval", .has_arg = 2, .val = 'W'},
+ 	{.name = "exact",         .has_arg = 0, .val = 'x'},
+ 	{.name = "fragments",     .has_arg = 0, .val = 'f'},
+ 	{.name = "version",       .has_arg = 0, .val = 'V'},
+@@ -252,7 +253,9 @@ exit_printhelp(const struct xtables_rule
+ "				network interface name ([+] for wildcard)\n"
+ "  --table	-t table	table to manipulate (default: `filter')\n"
+ "  --verbose	-v		verbose mode\n"
+-"  --wait	-w [seconds]	wait for the xtables lock\n"
++"  --wait	-w [seconds]	maximum wait to acquire xtables lock before give up\n"
++"  --wait-interval -W [usecs]	wait time to try to acquire xtables lock\n"
++"				default is 1 second\n"
+ "  --line-numbers		print line numbers when listing\n"
+ "  --exact	-x		expand numbers (display exact values)\n"
+ "[!] --fragment	-f		match second or further fragments only\n"
+@@ -1316,7 +1319,10 @@ int do_command4(int argc, char *argv[],
+ 	unsigned int nsaddrs = 0, ndaddrs = 0;
+ 	struct in_addr *saddrs = NULL, *smasks = NULL;
+ 	struct in_addr *daddrs = NULL, *dmasks = NULL;
+-
++	struct timeval wait_interval = {
++		.tv_sec = 1,
++	};
++	bool wait_interval_set = false;
+ 	int verbose = 0;
+ 	int wait = 0;
+ 	const char *chain = NULL;
+@@ -1353,7 +1359,7 @@ int do_command4(int argc, char *argv[],
+ 	opterr = 0;
+ 	opts = xt_params->orig_opts;
+ 	while ((cs.c = getopt_long(argc, argv,
+-	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvw::nt:m:xc:g:46",
++	   "-:A:C:D:R:I:L::S::M:F::Z::N:X::E:P:Vh::o:p:s:d:j:i:fbvw::W::nt:m:xc:g:46",
+ 					   opts, NULL)) != -1) {
+ 		switch (cs.c) {
+ 			/*
+@@ -1607,6 +1613,23 @@ int do_command4(int argc, char *argv[],
+ 						"wait seconds not numeric");
+ 			break;
+ 
++		case 'W':
++			if (restore) {
++				xtables_error(PARAMETER_PROBLEM,
++					      "You cannot use `-W' from "
++					      "iptables-restore");
++			}
++			if (optarg)
++				parse_wait_interval(optarg, &wait_interval);
++			else if (optind < argc &&
++				 argv[optind][0] != '-' &&
++				 argv[optind][0] != '!')
++				parse_wait_interval(argv[optind++],
++						    &wait_interval);
++
++			wait_interval_set = true;
++			break;
++
+ 		case 'm':
+ 			command_match(&cs);
+ 			break;
+@@ -1707,6 +1730,10 @@ int do_command4(int argc, char *argv[],
+ 		cs.invert = FALSE;
+ 	}
+ 
++	if (!wait && wait_interval_set)
++		xtables_error(PARAMETER_PROBLEM,
++			      "--wait-interval only makes sense with --wait\n");
++
+ 	if (strcmp(*table, "nat") == 0 &&
+ 	    ((policy != NULL && strcmp(policy, "DROP") == 0) ||
+ 	    (cs.jumpto != NULL && strcmp(cs.jumpto, "DROP") == 0)))
+@@ -1757,7 +1784,7 @@ int do_command4(int argc, char *argv[],
+ 	generic_opt_check(command, cs.options);
+ 
+ 	/* Attempt to acquire the xtables lock */
+-	if (!restore && !xtables_lock(wait)) {
++	if (!restore && !xtables_lock(wait, &wait_interval)) {
+ 		fprintf(stderr, "Another app is currently holding the xtables lock. ");
+ 		if (wait == 0)
+ 			fprintf(stderr, "Perhaps you want to use the -w option?\n");
+diff -up iptables-1.4.21/iptables/xshared.c.wait-interval iptables-1.4.21/iptables/xshared.c
+--- iptables-1.4.21/iptables/xshared.c.wait-interval	2017-04-05 14:04:04.557346624 +0200
++++ iptables-1.4.21/iptables/xshared.c	2017-04-05 14:04:04.563346679 +0200
+@@ -9,12 +9,15 @@
+ #include <sys/file.h>
+ #include <sys/socket.h>
+ #include <sys/un.h>
++#include <sys/time.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <xtables.h>
++#include <math.h>
+ #include "xshared.h"
+ 
+ #define XT_LOCK_NAME	"/run/xtables.lock"
++#define BASE_MICROSECONDS	100000
+ 
+ /*
+  * Print out any special helps. A user might like to be able to add a --help
+@@ -244,9 +247,15 @@ void xs_init_match(struct xtables_match
+ 		match->init(match->m);
+ }
+ 
+-bool xtables_lock(int wait)
++bool xtables_lock(int wait, struct timeval *wait_interval)
+ {
+-	int fd, waited = 0, i = 0;
++	struct timeval time_left, wait_time, waited_time;
++	int fd, i = 0;
++
++	time_left.tv_sec = wait;
++	time_left.tv_usec = 0;
++	waited_time.tv_sec = 0;
++	waited_time.tv_usec = 0;
+ 
+ 	fd = open(XT_LOCK_NAME, O_CREAT, 0600);
+ 	if (fd < 0)
+@@ -255,12 +264,43 @@ bool xtables_lock(int wait)
+ 	while (1) {
+ 		if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+ 			return true;
+-		else if (wait >= 0 && waited >= wait)
++		if (++i % 10 == 0) {
++			if (wait != -1)
++				fprintf(stderr, "Another app is currently holding the xtables lock; "
++					"still %lds %ldus time ahead to have a chance to grab the lock...\n",
++					time_left.tv_sec, time_left.tv_usec);
++			else
++				fprintf(stderr, "Another app is currently holding the xtables lock; "
++						"waiting for it to exit...\n");
++		}
++
++		wait_time = *wait_interval;
++		select(0, NULL, NULL, NULL, &wait_time);
++		if (wait == -1)
++			continue;
++
++		timeradd(&waited_time, wait_interval, &waited_time);
++		timersub(&time_left, wait_interval, &time_left);
++		if (!timerisset(&time_left))
+ 			return false;
+-		if (++i % 2 == 0)
+-			fprintf(stderr, "Another app is currently holding the xtables lock; "
+-				"waiting (%ds) for it to exit...\n", waited);
+-		waited++;
+-		sleep(1);
+ 	}
+ }
++
++void parse_wait_interval(const char *str, struct timeval *wait_interval)
++{
++	unsigned int usec;
++	int ret;
++
++	ret = sscanf(str, "%u", &usec);
++	if (ret == 1) {
++		if (usec > 999999)
++			xtables_error(PARAMETER_PROBLEM,
++				      "too long usec wait %u > 999999 usec",
++				      usec);
++
++		wait_interval->tv_sec = 0;
++		wait_interval->tv_usec = usec;
++		return;
++	}
++	xtables_error(PARAMETER_PROBLEM, "wait interval not numeric");
++}
+diff -up iptables-1.4.21/iptables/xshared.h.wait-interval iptables-1.4.21/iptables/xshared.h
+--- iptables-1.4.21/iptables/xshared.h.wait-interval	2017-04-05 14:04:04.555346605 +0200
++++ iptables-1.4.21/iptables/xshared.h	2017-04-05 14:04:04.563346679 +0200
+@@ -84,7 +84,9 @@ extern struct xtables_match *load_proto(
+ extern int subcmd_main(int, char **, const struct subcommand *);
+ extern void xs_init_target(struct xtables_target *);
+ extern void xs_init_match(struct xtables_match *);
+-extern bool xtables_lock(int wait);
++bool xtables_lock(int wait, struct timeval *wait_interval);
++
++void parse_wait_interval(const char *str, struct timeval *wait_interval);
+ 
+ extern const struct xtables_afinfo *afinfo;
+ 

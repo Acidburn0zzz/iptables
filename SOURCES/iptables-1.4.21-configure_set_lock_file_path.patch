@@ -1,0 +1,97 @@
+Adapted version of
+
+commit b91af533f4da15854893ba5cc082e1df6bcf9a97
+Author: Lorenzo Colitti <lorenzo@google.com>
+Date:   Tue Mar 14 17:55:50 2017 +0900
+
+    iptables: set the path of the lock file via a configure option.
+    
+    Currently the iptables lock is hardcoded as "/run/xtables.lock".
+    Allow users to change this path using the --with-xt-lock-name
+    option to ./configure option. This is useful on systems like
+    Android which do not have /run.
+    
+    Tested on Ubuntu, as follows:
+    
+    1. By default, the lock is placed in /run/xtables.lock:
+    
+    $ make distclean-recursive && ./autogen.sh &&
+      ./configure --disable-nftables --prefix /tmp/iptables &&
+      make -j64 &&
+      make install &&
+      sudo strace -e open,flock /tmp/iptables/sbin/iptables -L foo
+    ...
+    open("/run/xtables.lock", O_RDONLY|O_CREAT, 0600) = 3
+    flock(3, LOCK_EX|LOCK_NB)               = 0
+    iptables: No chain/target/match by that name.
+    
+    2. Specifying the lock results in the expected location being
+       used:
+    
+    $ make distclean-recursive && ./autogen.sh && \
+      ./configure --disable-nftables --prefix /tmp/iptables \
+      --with-xt-lock-name=/tmp/iptables/run/xtables.lock &&
+      make -j64 &&
+      make install &&
+      sudo strace -e open,flock /tmp/iptables/sbin/iptables -L foo
+    ...
+    open("/tmp/iptables/run/xtables.lock", O_RDONLY|O_CREAT, 0600) = 3
+    flock(3, LOCK_EX|LOCK_NB)               = 0
+    iptables: No chain/target/match by that name.
+    
+    Signed-off-by: Lorenzo Colitti <lorenzo@google.com>
+    Signed-off-by: Pablo Neira Ayuso <pablo@netfilter.org>
+
+diff -up iptables-1.4.21/configure.ac.configure_set_lock_file_path iptables-1.4.21/configure.ac
+--- iptables-1.4.21/configure.ac.configure_set_lock_file_path	2013-11-22 12:18:13.000000000 +0100
++++ iptables-1.4.21/configure.ac	2017-04-05 14:47:17.308782472 +0200
+@@ -60,6 +60,10 @@ AC_ARG_ENABLE([nfsynproxy],
+ AC_ARG_WITH([pkgconfigdir], AS_HELP_STRING([--with-pkgconfigdir=PATH],
+ 	[Path to the pkgconfig directory [[LIBDIR/pkgconfig]]]),
+ 	[pkgconfigdir="$withval"], [pkgconfigdir='${libdir}/pkgconfig'])
++AC_ARG_WITH([xt-lock-name], AS_HELP_STRING([--with-xt-lock-name=PATH],
++	[Path to the xtables lock [[/run/xtables.lock]]]),
++	[xt_lock_name="$withval"],
++	[xt_lock_name="/run/xtables.lock"])
+ 
+ libiptc_LDFLAGS2="";
+ AX_CHECK_LINKER_FLAGS([-Wl,--no-as-needed],
+@@ -118,7 +122,7 @@ AM_CONDITIONAL([HAVE_LIBNFNETLINK], [tes
+ regular_CFLAGS="-Wall -Waggregate-return -Wmissing-declarations \
+ 	-Wmissing-prototypes -Wredundant-decls -Wshadow -Wstrict-prototypes \
+ 	-Winline -pipe";
+-regular_CPPFLAGS="${largefile_cppflags} -D_REENTRANT \
++regular_CPPFLAGS="${largefile_cppflags} -DXT_LOCK_NAME=\\\"\${xt_lock_name}\\\" -D_REENTRANT \
+ 	-DXTABLES_LIBDIR=\\\"\${xtlibdir}\\\" -DXTABLES_INTERNAL";
+ kinclude_CPPFLAGS="";
+ if [[ -n "$kbuilddir" ]]; then
+@@ -156,6 +160,7 @@ AC_SUBST([libxtables_vcurrent])
+ AC_SUBST([libxtables_vage])
+ libxtables_vmajor=$(($libxtables_vcurrent - $libxtables_vage));
+ AC_SUBST([libxtables_vmajor])
++AC_SUBST([xt_lock_name])
+ 
+ AC_CONFIG_FILES([Makefile extensions/GNUmakefile include/Makefile
+ 	iptables/Makefile iptables/xtables.pc
+@@ -188,7 +193,8 @@ Build parameters:
+   Support plugins via dlopen (shared):	${enable_shared}
+   Installation prefix (--prefix):	${prefix}
+   Xtables extension directory:		${e_xtlibdir}
+-  Pkg-config directory:			${e_pkgconfigdir}"
++  Pkg-config directory:			${e_pkgconfigdir}
++  Xtables lock file:			${xt_lock_name}"
+ 
+ if [[ -n "$ksourcedir" ]]; then
+ 	echo "  Kernel source directory:		${ksourcedir}"
+diff -up iptables-1.4.21/iptables/xshared.c.configure_set_lock_file_path iptables-1.4.21/iptables/xshared.c
+--- iptables-1.4.21/iptables/xshared.c.configure_set_lock_file_path	2017-04-05 14:46:47.861540910 +0200
++++ iptables-1.4.21/iptables/xshared.c	2017-04-05 14:46:47.863540927 +0200
+@@ -17,8 +17,6 @@
+ #include <math.h>
+ #include "xshared.h"
+ 
+-#define XT_LOCK_NAME	"/run/xtables.lock"
+-
+ /*
+  * Print out any special helps. A user might like to be able to add a --help
+  * to the commandline, and see expected results. So we call help for all
