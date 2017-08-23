@@ -7,7 +7,7 @@
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.21
-Release: 18%{?dist}
+Release: 18.0%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
@@ -37,6 +37,9 @@ Patch16: iptables-1.4.21-restore_wait_man.patch
 Group: System Environment/Base
 URL: http://www.netfilter.org/
 License: GPLv2
+# add in libtool for autogen
+BuildRequires: libtool
+
 # libnetfilter_conntrack is needed for xt_connlabel
 BuildRequires: libnetfilter_conntrack-devel >= 1.0.4
 # libnfnetlink-devel is requires for nfnl_osf
@@ -116,6 +119,9 @@ Currently only provides nfnl_osf with the pf.os database.
 %patch16 -p1 -b .restore_wait_man
 
 %build
+#regen config
+./autogen.sh
+
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing " \
 %configure --enable-devel --with-kernel=/usr --with-kbuild=/usr --with-ksource=/usr
 
@@ -267,6 +273,10 @@ done
 
 
 %changelog
+* Tue Aug 22 2017 Johnny Hughes <johnny@centos.org> 1.4.21-18.0
+- add fix from Red Hat bug #1477413 
+- modify spec to use libtool to autogen configure
+
 * Mon Apr 24 2017 Thomas Woerner <twoerner@redhat.com> 1.4.21-18
 - Add support for --wait options to restore commands (RHBZ#1438597)
 - Do not set changed flag for rule check operations with module targets
