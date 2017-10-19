@@ -7,7 +7,7 @@
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.21
-Release: 18.0%{?dist}
+Release: 18.2%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
@@ -37,9 +37,6 @@ Patch16: iptables-1.4.21-restore_wait_man.patch
 Group: System Environment/Base
 URL: http://www.netfilter.org/
 License: GPLv2
-# add in libtool for autogen
-BuildRequires: libtool
-
 # libnetfilter_conntrack is needed for xt_connlabel
 BuildRequires: libnetfilter_conntrack-devel >= 1.0.4
 # libnfnetlink-devel is requires for nfnl_osf
@@ -49,6 +46,7 @@ BuildRequires: kernel-headers
 BuildRequires: systemd
 BuildRequires: automake
 BuildRequires: autoconf
+BuildRequires: libtool
 
 %description
 The iptables utility controls the network packet filtering code in the
@@ -119,7 +117,7 @@ Currently only provides nfnl_osf with the pf.os database.
 %patch16 -p1 -b .restore_wait_man
 
 %build
-#regen config
+# Since patches above touch configure.ac we must regen configure
 ./autogen.sh
 
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing " \
@@ -161,8 +159,13 @@ install -c -m 600 %{SOURCE6} %{buildroot}%{_sysconfdir}/sysconfig/ip6tables
 
 # install systemd service files
 install -d -m 755 %{buildroot}/%{_unitdir}
+sed -e 's;iptables;ip6tables;g' \
+    -e 's;IPv4;IPv6;g' \
+    -e 's;/usr/libexec/ip6tables;/usr/libexec/iptables;g' \
+    -e 's;^\(After=.*\)$;\1,iptables.service;' \
+    < %{SOURCE3} > ip6tables.service
+sed -i -e 's;^\(After=.*\)$;Before=ip6tables.service\n\1;' %{SOURCE3}
 install -c -m 644 %{SOURCE3} %{buildroot}/%{_unitdir}
-sed -e 's;iptables;ip6tables;g' -e 's;IPv4;IPv6;g' -e 's;/usr/libexec/ip6tables;/usr/libexec/iptables;g' < %{SOURCE3} > ip6tables.service
 install -c -m 644 ip6tables.service %{buildroot}/%{_unitdir}
 
 # install legacy actions for service command
@@ -216,7 +219,7 @@ done
 
 %postun services
 /sbin/ldconfig
-%systemd_postun_with_restart iptables.service ip6tables.service
+%systemd_postun iptables.service ip6tables.service
 
 %files
 %doc COPYING INCOMPATIBILITIES
@@ -273,9 +276,14 @@ done
 
 
 %changelog
-* Tue Aug 22 2017 Johnny Hughes <johnny@centos.org> 1.4.21-18.0
-- add fix from Red Hat bug #1477413 
-- modify spec to use libtool to autogen configure
+* Mon Sep 18 2017 Phil Sutter - 1.4.21-18.2
+- Prevent iptables.service and ip6tables.service from running in parallel
+  (RHBZ#1491963)
+- Don't restart services upon upgrade (RHBZ#1491961)
+
+* Mon Aug 14 2017 Thomas Woerner <twoerner@redhat.com> 1.4.21-18.1
+- Use wait option for restore calls to fix failing service starts
+  (RHBZ#1481207)
 
 * Mon Apr 24 2017 Thomas Woerner <twoerner@redhat.com> 1.4.21-18
 - Add support for --wait options to restore commands (RHBZ#1438597)
