@@ -7,7 +7,7 @@
 Name: iptables
 Summary: Tools for managing Linux kernel packet filtering capabilities
 Version: 1.4.21
-Release: 18.2%{?dist}
+Release: 18.3%{?dist}
 Source: http://www.netfilter.org/projects/iptables/files/%{name}-%{version}.tar.bz2
 Source1: iptables.init
 Source2: iptables-config
@@ -162,7 +162,7 @@ install -d -m 755 %{buildroot}/%{_unitdir}
 sed -e 's;iptables;ip6tables;g' \
     -e 's;IPv4;IPv6;g' \
     -e 's;/usr/libexec/ip6tables;/usr/libexec/iptables;g' \
-    -e 's;^\(After=.*\)$;\1,iptables.service;' \
+    -e 's;^\(After=.*\)$;\1 iptables.service;' \
     < %{SOURCE3} > ip6tables.service
 sed -i -e 's;^\(After=.*\)$;Before=ip6tables.service\n\1;' %{SOURCE3}
 install -c -m 644 %{SOURCE3} %{buildroot}/%{_unitdir}
@@ -276,6 +276,9 @@ done
 
 
 %changelog
+* Tue Feb 13 2018 Phil Sutter - 1.4.21-18.3
+- Fix incorrect ip6tables.service unit syntax (RHBZ#1538549)
+
 * Mon Sep 18 2017 Phil Sutter - 1.4.21-18.2
 - Prevent iptables.service and ip6tables.service from running in parallel
   (RHBZ#1491963)
