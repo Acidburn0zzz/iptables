@@ -58,6 +58,8 @@ IPTABLES_STATUS_NUMERIC="yes"
 IPTABLES_STATUS_VERBOSE="no"
 IPTABLES_STATUS_LINENUMBERS="yes"
 IPTABLES_SYSCTL_LOAD_LIST=""
+IPTABLES_RESTORE_WAIT=600
+IPTABLES_RESTORE_WAIT_INTERVAL=1000000
 
 # Load firewall configuration.
 [ -f "$IPTABLES_CONFIG" ] && . "$IPTABLES_CONFIG"
@@ -216,6 +218,12 @@ start() {
 
     OPT=
     [ "x$IPTABLES_SAVE_COUNTER" = "xyes" ] && OPT="-c"
+    if [ $IPTABLES_RESTORE_WAIT -ne 0 ]; then
+	OPT="${OPT} --wait ${IPTABLES_RESTORE_WAIT}"
+	if [ $IPTABLES_RESTORE_WAIT_INTERVAL -lt 1000000 ]; then
+	    OPT="${OPT} --wait-interval ${IPTABLES_RESTORE_WAIT_INTERVAL}"
+	fi
+    fi
 
     $IPTABLES-restore $OPT $IPTABLES_DATA
     if [ $? -eq 0 ]; then
@@ -383,6 +391,12 @@ reload() {
 
     OPT=
     [ "x$IPTABLES_SAVE_COUNTER" = "xyes" ] && OPT="-c"
+    if [ $IPTABLES_RESTORE_WAIT -ne 0 ]; then
+	OPT="${OPT} --wait ${IPTABLES_RESTORE_WAIT}"
+	if [ $IPTABLES_RESTORE_WAIT_INTERVAL -lt 1000000 ]; then
+	    OPT="${OPT} --wait-interval ${IPTABLES_RESTORE_WAIT_INTERVAL}"
+	fi
+    fi
 
     $IPTABLES-restore $OPT $IPTABLES_DATA
     if [ $? -eq 0 ]; then

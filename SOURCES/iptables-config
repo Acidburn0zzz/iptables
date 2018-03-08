@@ -52,3 +52,15 @@ IPTABLES_STATUS_LINENUMBERS="yes"
 # Space separated list of sysctl items which are to be reloaded on start.
 # List items will be matched by fgrep.
 #IPTABLES_SYSCTL_LOAD_LIST=".nf_conntrack .bridge-nf"
+
+# Set wait option for iptables-restore calls in seconds
+#   Default: 600
+# Set to 0 to deactivate the wait.
+#IPTABLES_RESTORE_WAIT=600
+
+# Set wait interval option for iptables-restore calls in microseconds
+#   Default: 1000000
+# Set to 100000 to try to get the lock every 100000 microseconds, 10 times a
+# second.
+# Only usable with IPTABLES_RESTORE_WAIT > 0
+#IPTABLES_RESTORE_WAIT_INTERVAL=1000000
